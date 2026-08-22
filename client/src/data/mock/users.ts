@@ -1,8 +1,13 @@
 import type { User } from "@/types";
 
+// Still referenced by the trip/share/admin fixtures, which have no API behind
+// them yet. The signed-in user's own identity no longer comes from here — see
+// `AuthProvider` / `useUser()`.
 export const mockUser: User = {
   id: "user-1",
   name: "Smrutiranjan Barik",
+  firstName: "Smrutiranjan",
+  lastName: "Barik",
   email: "smruti@globetrotter.app",
   avatarUrl:
     "https://images.unsplash.com/photo-1633332755192-727a05c4013d?auto=format&fit=crop&w=200&q=80",
@@ -24,7 +29,9 @@ export const mockUser: User = {
 export const mockAdmin: User = {
   ...mockUser,
   id: "admin-1",
-  name: "Admin",
+  name: "Admin User",
+  firstName: "Admin",
+  lastName: "User",
   email: "admin@globetrotter.app",
   role: "admin",
 };

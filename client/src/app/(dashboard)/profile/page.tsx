@@ -1,3 +1,5 @@
+"use client";
+
 import Link from "next/link";
 import { MapPin, Mail, Phone, Calendar, Pencil } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
@@ -9,11 +11,13 @@ import { SectionHeading } from "@/components/layout/SectionHeading";
 import { TripCard } from "@/components/trips/TripCard";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { MapPinned } from "lucide-react";
-import { mockUser } from "@/data/mock/users";
+import { useUser } from "@/lib/auth/AuthProvider";
 import { mockTrips } from "@/data/mock/trips";
 import { formatDate } from "@/lib/utils/format";
 
 export default function ProfilePage() {
+  const user = useUser();
+  // Trips are still mock data — there is no /trips endpoint on the API yet.
   const preplanned = mockTrips.filter((t) => t.status === "upcoming" || t.status === "ongoing" || t.status === "draft");
   const previous = mockTrips.filter((t) => t.status === "completed");
 
@@ -23,18 +27,18 @@ export default function ProfilePage() {
 
       {/* User header */}
       <Card className="flex flex-col gap-5 sm:flex-row sm:items-center">
-        <Avatar name={mockUser.name} src={mockUser.avatarUrl} size="lg" className="h-24 w-24 text-2xl" />
+        <Avatar name={user.name} src={user.avatarUrl} size="lg" className="h-24 w-24 text-2xl" />
         <div className="flex-1">
-          <h2 className="text-h2 text-text-primary">{mockUser.name}</h2>
+          <h2 className="text-h2 text-text-primary">{user.name}</h2>
           <div className="mt-2 flex flex-wrap gap-x-5 gap-y-1.5 text-sm text-text-secondary">
-            <span className="flex items-center gap-1.5"><Mail className="h-4 w-4" />{mockUser.email}</span>
-            <span className="flex items-center gap-1.5"><Phone className="h-4 w-4" />+91 98765 43210</span>
-            {mockUser.location && <span className="flex items-center gap-1.5"><MapPin className="h-4 w-4" />{mockUser.location}</span>}
-            <span className="flex items-center gap-1.5"><Calendar className="h-4 w-4" />Joined {formatDate(mockUser.memberSince, { month: "long", year: "numeric" })}</span>
+            <span className="flex items-center gap-1.5"><Mail className="h-4 w-4" />{user.email}</span>
+            {user.phone && <span className="flex items-center gap-1.5"><Phone className="h-4 w-4" />{user.phone}</span>}
+            {user.location && <span className="flex items-center gap-1.5"><MapPin className="h-4 w-4" />{user.location}</span>}
+            <span className="flex items-center gap-1.5"><Calendar className="h-4 w-4" />Joined {formatDate(user.memberSince, { month: "long", year: "numeric" })}</span>
           </div>
-          {mockUser.bio && <p className="mt-3 max-w-2xl text-text-secondary">{mockUser.bio}</p>}
+          {user.bio && <p className="mt-3 max-w-2xl text-text-secondary">{user.bio}</p>}
           <div className="mt-3 flex flex-wrap gap-2">
-            {mockUser.preferences.travelStyle.map((s) => (
+            {user.preferences.travelStyle.map((s) => (
               <Badge key={s} variant="primary">{s}</Badge>
             ))}
           </div>

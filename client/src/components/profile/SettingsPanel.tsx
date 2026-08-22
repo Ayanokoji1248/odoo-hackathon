@@ -9,7 +9,7 @@ import { Select } from "@/components/ui/Select";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { useToast } from "@/components/ui/Toast";
-import { mockUser } from "@/data/mock/users";
+import { useUser } from "@/lib/auth/AuthProvider";
 import { cn } from "@/lib/utils/cn";
 import type { TravelStyle } from "@/types";
 
@@ -40,9 +40,10 @@ function Toggle({ label, defaultOn }: { label: string; defaultOn?: boolean }) {
 }
 
 export function SettingsPanel() {
+  const user = useUser();
   const { toast } = useToast();
   const [section, setSection] = useState("profile");
-  const [styles, setStyles] = useState<TravelStyle[]>(mockUser.preferences.travelStyle);
+  const [styles, setStyles] = useState<TravelStyle[]>(user.preferences.travelStyle);
 
   const toggleStyle = (s: TravelStyle) =>
     setStyles((p) => (p.includes(s) ? p.filter((x) => x !== s) : [...p, s]));
@@ -70,12 +71,14 @@ export function SettingsPanel() {
           <Card className="space-y-4">
             <h3 className="text-h4 text-text-primary">Personal Information</h3>
             <div className="grid gap-4 sm:grid-cols-2">
-              <Input label="Full name" defaultValue={mockUser.name} />
-              <Input label="Email" type="email" defaultValue={mockUser.email} />
-              <Input label="Location" defaultValue={mockUser.location} />
-              <Input label="Home city" defaultValue={mockUser.preferences.homeCity} />
+              <Input label="First name" defaultValue={user.firstName} />
+              <Input label="Last name" defaultValue={user.lastName} />
+              <Input label="Email" type="email" defaultValue={user.email} disabled />
+              <Input label="Phone number" type="tel" defaultValue={user.phone} />
+              <Input label="Location" defaultValue={user.location} />
+              <Input label="Home city" defaultValue={user.preferences.homeCity} />
             </div>
-            <Textarea label="Bio" defaultValue={mockUser.bio} />
+            <Textarea label="Bio" defaultValue={user.bio} />
             <div className="flex justify-end">
               <Button onClick={() => toast("Profile saved", "success")}>Save changes</Button>
             </div>
@@ -98,8 +101,8 @@ export function SettingsPanel() {
               </div>
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
-              <Select label="Currency" defaultValue={mockUser.preferences.currency} options={[{ label: "INR (₹)", value: "INR" }, { label: "USD ($)", value: "USD" }, { label: "EUR (€)", value: "EUR" }]} />
-              <Select label="Language" defaultValue={mockUser.preferences.language} options={[{ label: "English", value: "English" }, { label: "Hindi", value: "Hindi" }]} />
+              <Select label="Currency" defaultValue={user.preferences.currency} options={[{ label: "INR (₹)", value: "INR" }, { label: "USD ($)", value: "USD" }, { label: "EUR (€)", value: "EUR" }]} />
+              <Select label="Language" defaultValue={user.preferences.language} options={[{ label: "English", value: "English" }, { label: "Hindi", value: "Hindi" }]} />
             </div>
             <div className="flex justify-end">
               <Button onClick={() => toast("Preferences saved", "success")}>Save changes</Button>
@@ -111,10 +114,10 @@ export function SettingsPanel() {
           <Card>
             <h3 className="text-h4 text-text-primary">Privacy</h3>
             <div className="mt-2 divide-y divide-border">
-              <Toggle label="Public profile" defaultOn={mockUser.preferences.publicProfile} />
+              <Toggle label="Public profile" defaultOn={user.preferences.publicProfile} />
               <Toggle label="Show trips on public profile" defaultOn />
               <Toggle label="Allow others to copy my shared trips" defaultOn />
-              <Toggle label="Email notifications" defaultOn={mockUser.preferences.emailNotifications} />
+              <Toggle label="Email notifications" defaultOn={user.preferences.emailNotifications} />
             </div>
           </Card>
         )}

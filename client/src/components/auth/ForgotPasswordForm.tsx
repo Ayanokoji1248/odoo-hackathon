@@ -1,21 +1,31 @@
 "use client";
 
 import { useState } from "react";
-import { Mail, CheckCircle2 } from "lucide-react";
-import { Input } from "@/components/ui/Input";
+import { CheckCircle2, Mail } from "lucide-react";
 import { Button } from "@/components/ui/Button";
+import { Input } from "@/components/ui/Input";
+import { forgotPassword } from "@/lib/api/auth";
+import { ApiError } from "@/lib/api/client";
 
 export function ForgotPasswordForm() {
   const [sent, setSent] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const onSubmit = (e: React.FormEvent) => {
+  const onSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setLoading(true);
-    setTimeout(() => {
-      setLoading(false);
+    setError(null);
+
+    const form = new FormData(e.currentTarget);
+    try {
+      await forgotPassword(String(form.get("email") ?? ""));
       setSent(true);
-    }, 700);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Unable to send reset link");
+    } finally {
+      setLoading(false);
+    }
   };
 
   if (sent) {
@@ -47,6 +57,7 @@ export function ForgotPasswordForm() {
           leftIcon={<Mail className="h-4 w-4" />}
           required
         />
+        {error && <p className="text-sm font-medium text-error">{error}</p>}
         <Button type="submit" size="lg" className="w-full" loading={loading}>
           Send reset link
         </Button>

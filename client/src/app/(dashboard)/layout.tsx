@@ -1,5 +1,7 @@
 import { Navbar } from "@/components/layout/Navbar";
 import { BottomNav } from "@/components/layout/BottomNav";
+import { AuthProvider } from "@/lib/auth/AuthProvider";
+import { RequireAuth } from "@/lib/auth/RequireAuth";
 
 export default function DashboardLayout({
   children,
@@ -7,12 +9,18 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   return (
-    <div className="min-h-screen overflow-x-clip bg-background">
-      <Navbar />
-      <main className="mx-auto w-full max-w-7xl px-4 pb-24 pt-6 lg:px-8 lg:pb-12">
-        {children}
-      </main>
-      <BottomNav />
-    </div>
+    // One provider for the whole group, so /auth/me is fetched once per page
+    // load and survives client-side navigation between dashboard routes.
+    <AuthProvider>
+      <RequireAuth>
+        <div className="min-h-screen overflow-x-clip bg-background">
+          <Navbar />
+          <main className="mx-auto w-full max-w-7xl px-4 pb-24 pt-6 lg:px-8 lg:pb-12">
+            {children}
+          </main>
+          <BottomNav />
+        </div>
+      </RequireAuth>
+    </AuthProvider>
   );
 }

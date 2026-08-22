@@ -5,7 +5,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.exceptions import ApiError
+from app.core.exceptions import ApiError, conflict_from_unique_violation
 from app.models.catalog import City, SavedDestination
 from app.models.user import User
 from app.schemas.user import UserUpdate
@@ -16,7 +16,12 @@ async def update_profile(db: AsyncSession, user: User, data: UserUpdate) -> User
     # exclude_unset: an omitted field is "leave alone", an explicit null is "clear it".
     for field, value in data.model_dump(exclude_unset=True).items():
         setattr(user, field, value)
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError as exc:
+        # `phone` is unique, so a profile edit can collide just like registration.
+        await db.rollback()
+        raise conflict_from_unique_violation(exc, "Those details are already in use") from None
     await db.refresh(user)
     return user
 

@@ -34,9 +34,9 @@ app.main
   └─ app.api.v1.router    →  routes mounted
 ```
 
-`Settings()` runs at **import time**, on purpose: a missing `DATABASE_URL` or
-`JWT_SECRET` kills the process at startup rather than 500-ing the first request
-that needs it.
+`Settings()` runs at **import time**, on purpose: a missing `DATABASE_URL` kills
+the process at startup rather than 500-ing the first request that needs it. The
+same validator rejects `COOKIE_SAMESITE=none` without `COOKIE_SECURE=true`.
 
 `create_async_engine` does **not** connect. The first real connection happens on
 the first request that uses `get_db` (or on `/health`). So a bad host or password
@@ -52,10 +52,7 @@ Process env wins — that is how the test suite redirects to its own database.
 | Env var | Type | Default | Effect |
 |---|---|---|---|
 | `DATABASE_URL` | str | **required** | `postgresql+asyncpg://user:pass@host:port/db` |
-| `JWT_SECRET` | str | **required** | HMAC key for access tokens |
-| `JWT_ALGORITHM` | str | `HS256` | |
-| `ACCESS_TOKEN_EXPIRE_MINUTES` | int | `15` | also reported as `expires_in` (× 60) |
-| `REFRESH_TOKEN_EXPIRE_DAYS` | int | `7` | |
+| `SESSION_EXPIRE_DAYS` | int | `7` | lifetime of the `gt_session` cookie and its row |
 | `RESET_TOKEN_EXPIRE_MINUTES` | int | `30` | |
 | `DEBUG` | bool | `false` | turns on SQLAlchemy `echo`, and makes `/auth/forgot-password` return the reset token |
 | `CORS_ORIGINS` | str | `http://localhost:5173,http://localhost:3000` | comma-separated, read via `settings.cors_origin_list` |
@@ -127,8 +124,8 @@ Two consequences worth remembering:
 ## 5. Database layer
 
 `Base` carries a naming convention, so constraint and index names are
-deterministic (`uq_users_email`, `fk_refresh_tokens_user_id_users`,
-`ix_refresh_tokens_user_id`, `pk_users`). Autogenerate produces stable diffs
+deterministic (`uq_users_email`, `fk_sessions_user_id_users`,
+`ix_sessions_user_id`, `pk_users`). Autogenerate produces stable diffs
 because of it — do not remove it, or the next migration will try to rename
 every constraint in the schema.
 
@@ -207,6 +204,9 @@ So: `"db": "error: ..."` in a 200 response is the signal that Postgres is the pr
 
 | Symptom | Likely cause | Check |
 |---|---|---|
+| `ModuleNotFoundError: No module named 'pydantic_core._pydantic_core'` | venv rebuilt on Python 3.14 over cp312 wheels | `cat .venv/pyvenv.cfg` - must say 3.12; fix with `py -3.12 -m venv .venv --clear` + reinstall |
+| `[WinError 5] Access is denied: .venv\Scripts\python.exe` when recreating the venv | a uvicorn reloader still holds the exe | stop it, then retry `--clear` |
+| `ResolutionImpossible` installing requirements.txt | a pin drifted from what an upgraded package needs | the conflicting line pip names |
 | `ValidationError` for `Settings` at startup | missing env var, or no `.env` | `cat .env`; compare against §3 |
 | `ModuleNotFoundError: psycopg2` / dialect errors | `DATABASE_URL` missing `+asyncpg` | the driver prefix |
 | `role "globetrotter" does not exist` | connected to the host's own Postgres | port must be 5433 |

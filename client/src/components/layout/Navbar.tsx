@@ -9,8 +9,8 @@ import { Button } from "@/components/ui/Button";
 import { Dropdown, DropdownItem } from "@/components/ui/Dropdown";
 import { Logo } from "./Logo";
 import { topNav } from "@/lib/constants/navigation";
-import { mockUser } from "@/data/mock/users";
 import { cn } from "@/lib/utils/cn";
+import { useAuth, useUser } from "@/lib/auth/AuthProvider";
 
 function isActive(pathname: string, href: string) {
   if (href === "/dashboard") return pathname === "/dashboard";
@@ -21,6 +21,9 @@ export function Navbar() {
   const pathname = usePathname();
   const router = useRouter();
   const [open, setOpen] = useState(false);
+  // Non-null: <RequireAuth> in the layout does not render us until it resolves.
+  const user = useUser();
+  const { logout } = useAuth();
 
   return (
     <header className="sticky top-0 z-30 border-b border-border bg-surface/85 backdrop-blur-md">
@@ -59,16 +62,20 @@ export function Navbar() {
             <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-primary ring-2 ring-surface" />
           </button>
 
-          <Dropdown trigger={<Avatar name={mockUser.name} src={mockUser.avatarUrl} size="sm" />}>
+          <Dropdown trigger={<Avatar name={user.name} src={user.avatarUrl} size="sm" />}>
             <div className="border-b border-border px-3 py-2.5">
-              <p className="text-sm font-semibold text-text-primary">{mockUser.name}</p>
-              <p className="truncate text-xs text-text-muted">{mockUser.email}</p>
+              <p className="text-sm font-semibold text-text-primary">{user.name}</p>
+              <p className="truncate text-xs text-text-muted">{user.email}</p>
             </div>
             <div className="pt-1">
               <Link href="/profile"><DropdownItem><User className="h-4 w-4" /> Profile</DropdownItem></Link>
               <Link href="/settings"><DropdownItem><Settings className="h-4 w-4" /> Settings</DropdownItem></Link>
-              <Link href="/admin"><DropdownItem><Shield className="h-4 w-4" /> Admin Panel</DropdownItem></Link>
-              <Link href="/login"><DropdownItem danger><LogOut className="h-4 w-4" /> Logout</DropdownItem></Link>
+              {/* Cosmetic gate only — /admin enforces the role itself, and the
+                  API is the boundary that actually matters. */}
+              {user.role === "admin" && (
+                <Link href="/admin"><DropdownItem><Shield className="h-4 w-4" /> Admin Panel</DropdownItem></Link>
+              )}
+              <DropdownItem danger onClick={logout}><LogOut className="h-4 w-4" /> Logout</DropdownItem>
             </div>
           </Dropdown>
 

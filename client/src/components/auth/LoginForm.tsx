@@ -3,9 +3,11 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { User, Lock } from "lucide-react";
-import { Input } from "@/components/ui/Input";
+import { Lock, Mail } from "lucide-react";
 import { Button } from "@/components/ui/Button";
+import { Input } from "@/components/ui/Input";
+import { login } from "@/lib/api/auth";
+import { ApiError } from "@/lib/api/client";
 
 function GoogleIcon() {
   return (
@@ -21,41 +23,61 @@ function GoogleIcon() {
 export function LoginForm() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const onSubmit = (e: React.FormEvent) => {
+  const onSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setLoading(true);
-    setTimeout(() => router.push("/dashboard"), 600);
+    setError(null);
+
+    const form = new FormData(e.currentTarget);
+    try {
+      await login(String(form.get("email") ?? ""), String(form.get("password") ?? ""));
+      router.push("/dashboard");
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Unable to sign in");
+      setLoading(false);
+    }
   };
 
   return (
     <div>
-      <h1 className="text-center font-display text-3xl font-extrabold tracking-tight text-secondary">
-        Sign in to GlobeTrotter
-      </h1>
-      <p className="mt-2 text-center text-text-secondary">
-        Pick up right where you left off planning.
-      </p>
+      <div className="text-center md:text-left">
+        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary sm:text-sm">
+          Welcome back
+        </p>
+        <h1 className="mt-2 text-balance font-display text-3xl font-extrabold leading-tight text-secondary sm:text-4xl">
+          Sign in to GlobeTrotter
+        </h1>
+        <p className="mt-2 max-w-sm text-pretty text-sm leading-6 text-text-secondary sm:text-base md:max-w-md">
+          Continue planning trips, comparing cities, and keeping every booking detail in one place.
+        </p>
+      </div>
 
-      <form onSubmit={onSubmit} className="mt-7 space-y-4">
+      <form onSubmit={onSubmit} className="mt-6 space-y-4">
         <Input
-          name="username"
-          type="text"
-          label="Username"
-          placeholder="your_username"
-          defaultValue="smruti"
-          leftIcon={<User className="h-4 w-4" />}
+          name="email"
+          type="email"
+          label="Email address"
+          placeholder="you@example.com"
+          autoComplete="email"
+          leftIcon={<Mail className="h-4 w-4" />}
           required
         />
         <Input
           name="password"
           type="password"
           label="Password"
-          placeholder="••••••••"
-          defaultValue="password"
+          placeholder="Enter your password"
+          autoComplete="current-password"
           leftIcon={<Lock className="h-4 w-4" />}
           required
         />
+        {error && (
+          <p className="rounded-xl bg-red-50 px-3.5 py-2.5 text-sm font-medium text-error ring-1 ring-red-100">
+            {error}
+          </p>
+        )}
 
         <div className="flex items-center justify-between">
           <label className="flex cursor-pointer items-center gap-2 text-sm text-text-secondary">
@@ -71,27 +93,27 @@ export function LoginForm() {
           </Link>
         </div>
 
-        <Button type="submit" size="lg" className="w-full" loading={loading}>
-          {loading ? "Signing in…" : "Log In"}
+        <Button
+          type="submit"
+          size="lg"
+          className="w-full rounded-xl shadow-[0_14px_28px_rgba(199,0,50,0.2)]"
+          loading={loading}
+        >
+          {loading ? "Signing in..." : "Log in"}
         </Button>
       </form>
 
-      <div className="my-6 flex items-center gap-3 text-xs font-medium text-text-muted">
+      <div className="my-5 flex items-center gap-3 text-xs font-medium text-text-muted">
         <span className="h-px flex-1 bg-border" />
-        OR CONTINUE WITH
+        Continue another way
         <span className="h-px flex-1 bg-border" />
       </div>
 
-      <Button
-        variant="outline"
-        size="lg"
-        className="w-full"
-        onClick={() => router.push("/dashboard")}
-      >
+      <Button variant="outline" size="lg" className="w-full rounded-xl border-secondary-light bg-white" disabled>
         <GoogleIcon /> Google
       </Button>
 
-      <p className="mt-8 text-center text-sm text-text-secondary">
+      <p className="mt-6 text-center text-sm text-text-secondary">
         Don&apos;t have an account?{" "}
         <Link href="/signup" className="font-semibold text-primary hover:underline">
           Create account

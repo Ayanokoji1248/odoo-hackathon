@@ -13,6 +13,9 @@ _dev_url = make_url({**dotenv_values(".env"), **os.environ}["DATABASE_URL"])
 _test_url = _dev_url.set(database=f"{_dev_url.database}_test")
 os.environ["DATABASE_URL"] = _test_url.render_as_string(hide_password=False)
 os.environ["DEBUG"] = "true"  # /auth/forgot-password returns the token instead of mailing it
+os.environ.setdefault("JWT_SECRET", "test-jwt-secret")
+# httpx (like a browser) refuses to send Secure cookies over http://test
+os.environ["COOKIE_SECURE"] = "false"
 
 import pytest  # noqa: E402
 from httpx import ASGITransport, AsyncClient  # noqa: E402
@@ -38,6 +41,15 @@ async def _schema():
     await admin.dispose()
 
     async with engine.begin() as conn:
+        # Rebuild the schema from scratch every run. `create_all` alone only adds
+        # *missing tables* - it never alters an existing one - so a column added
+        # to a model would leave the test DB on the old shape and every test
+        # would die with UndefinedColumnError until someone dropped the database
+        # by hand. `drop_all` is not enough either: it only knows tables still
+        # present in the models, so a renamed or removed table lingers as an
+        # orphan and blocks the drop of whatever it references.
+        await conn.execute(text("DROP SCHEMA public CASCADE"))
+        await conn.execute(text("CREATE SCHEMA public"))
         await conn.execute(text("CREATE EXTENSION IF NOT EXISTS citext"))
         await conn.execute(text("CREATE EXTENSION IF NOT EXISTS pg_trgm"))
         await conn.run_sync(Base.metadata.create_all)
@@ -62,20 +74,37 @@ async def client():
 
 @pytest.fixture
 def register_payload():
-    return {"name": "Ada", "email": "Ada@Example.com", "password": "hunter2hunter2"}
+    return {
+        "first_name": "Ada",
+        "last_name": "Lovelace",
+        "email": "Ada@Example.com",
+        "password": "hunter2hunter2",
+        "phone": "+91 98765 43210",
+        "city": "Bengaluru",
+        "country": "India",
+        "additional_info": "Prefers window seats.",
+    }
+
+
+@pytest.fixture
+def make_client():
+    """Build an extra client with explicit cookies, bypassing the shared jar."""
+
+    def _make(**kwargs):
+        return AsyncClient(
+            transport=ASGITransport(app=fastapi_app), base_url="http://test", **kwargs
+        )
+
+    return _make
 
 
 @pytest.fixture
 async def auth(client, register_payload):
-    """Registered user + a ready-made Authorization header."""
+    """Registered user. The session cookie is already in `client`'s jar, so every
+    later call through `client` is authenticated with no headers at all."""
     r = await client.post("/api/v1/auth/register", json=register_payload)
     assert r.status_code == 201, r.text
-    data = r.json()["data"]
-    return {
-        "user": data["user"],
-        "tokens": data["tokens"],
-        "headers": {"Authorization": f"Bearer {data['tokens']['access_token']}"},
-    }
+    return r.json()["data"]
 
 
 @pytest.fixture

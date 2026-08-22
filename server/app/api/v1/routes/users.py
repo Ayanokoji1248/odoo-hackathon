@@ -1,7 +1,8 @@
 import uuid
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Response, status
 
+from app.core.cookies import clear_auth_cookies
 from app.core.schemas import ApiResponse
 from app.deps import CurrentUser, DbSession
 from app.schemas.auth import ChangePasswordRequest
@@ -20,15 +21,19 @@ async def update_me(data: UserUpdate, db: DbSession, user: CurrentUser) -> ApiRe
 
 @router.patch("/me/password")
 async def change_password(
-    data: ChangePasswordRequest, db: DbSession, user: CurrentUser
+    data: ChangePasswordRequest, db: DbSession, user: CurrentUser, response: Response
 ) -> ApiResponse[dict]:
     await auth_service.change_password(db, user, data.current_password, data.new_password)
+    # This browser's session was deleted along with all the others, so its cookie
+    # is dead - clear it rather than leave a stale half-session.
+    clear_auth_cookies(response)
     return ApiResponse(data={"message": "Password updated, all sessions signed out"})
 
 
 @router.delete("/me")
-async def delete_me(db: DbSession, user: CurrentUser) -> ApiResponse[dict]:
+async def delete_me(db: DbSession, user: CurrentUser, response: Response) -> ApiResponse[dict]:
     await user_service.delete_account(db, user)
+    clear_auth_cookies(response)
     return ApiResponse(data={"deleted": True})
 
 

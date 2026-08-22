@@ -1,367 +1,442 @@
-# Phase 2 — Auth & Users
+# Phase 2 — Auth & users
 
-Status: complete. 18 route-level tests. Builds on
-[phase-1-foundation.md](phase-1-foundation.md) — envelopes, error codes and
-config live there.
+> Superseded for runtime auth by
+> [phase-4-production-auth.md](phase-4-production-auth.md). This doc is kept as
+> history for the temporary one-cookie implementation.
+
+Cookie-based sessions, password reset, profile management, and the dependency
+every protected route hangs off.
+
+> **Revised after Phase 3.** This phase originally shipped a JWT access token +
+> rotating opaque refresh token + signed double-submit CSRF token — three tokens,
+> three cookies, a middleware, and a client-side refresh interceptor. It was
+> replaced with **one opaque session token in one httpOnly cookie**.
+>
+> The reasoning is in §2. Short version: the JWT's only advantage is skipping a
+> DB read, and `get_current_user` had to read the user row anyway to check
+> `is_active` — so statelessness bought nothing and cost revocability. And
+> `SameSite=lax` already blocks the cross-site POST that the CSRF token existed
+> to catch. Both were deleted along with `pyjwt`.
 
 ---
 
-## 1. File map
+## 1. Files
 
-| File | Purpose |
+| File | Responsibility |
 |---|---|
-| [app/core/security.py](../app/core/security.py) | password hashing, opaque token generation, token hashing, JWT encode/decode |
-| [app/models/user.py](../app/models/user.py) | `User`, `RefreshToken`, `PasswordResetToken`, `UserRole` |
-| [app/schemas/auth.py](../app/schemas/auth.py) | request/response bodies for every auth route |
-| [app/schemas/user.py](../app/schemas/user.py) | `UserRead` (no `password_hash`), `UserUpdate` |
-| [app/services/auth_service.py](../app/services/auth_service.py) | all auth business logic and every commit |
-| [app/services/user_service.py](../app/services/user_service.py) | profile update, account delete |
-| [app/deps.py](../app/deps.py) | `DbSession`, `get_current_user`/`CurrentUser`, `require_admin`/`AdminUser` |
-| [app/api/v1/routes/auth.py](../app/api/v1/routes/auth.py) | `/api/v1/auth/*` |
-| [app/api/v1/routes/users.py](../app/api/v1/routes/users.py) | `/api/v1/users/me*` |
-| [alembic/versions/dae7f6738b4c_…](../alembic/versions/dae7f6738b4c_auth_users_refresh_and_reset_tokens.py) | the tables + `citext` extension |
+| [app/core/security.py](../app/core/security.py) | bcrypt hash/verify, opaque token generation, sha256 token hashing |
+| [app/core/cookies.py](../app/core/cookies.py) | the cookie name and its set/clear helpers |
+| [app/models/user.py](../app/models/user.py) | `User`, `UserSession`, `PasswordResetToken`, `UserRole` |
+| [app/schemas/auth.py](../app/schemas/auth.py) | request bodies only — no token ever appears in a response model |
+| [app/services/auth_service.py](../app/services/auth_service.py) | every write: register, login, logout, reset, change-password |
+| [app/services/user_service.py](../app/services/user_service.py) | profile update, account delete, saved destinations |
+| [app/deps.py](../app/deps.py) | `get_current_user`, `CurrentUser`, `AdminUser` |
+| [app/api/v1/routes/auth.py](../app/api/v1/routes/auth.py) | `/auth/*` |
+| [app/api/v1/routes/users.py](../app/api/v1/routes/users.py) | `/users/me*` |
+| [alembic/versions/dae7f6738b4c_…](../alembic/versions/dae7f6738b4c_auth_users_refresh_and_reset_tokens.py) | original tables + `citext` |
+| [alembic/versions/7f1c4e0b93aa_…](../alembic/versions/7f1c4e0b93aa_replace_refresh_tokens_with_sessions.py) | drops `refresh_tokens`, creates `sessions` |
+| [tests/test_auth.py](../tests/test_auth.py) · [tests/test_users.py](../tests/test_users.py) | route-level coverage |
 
 ---
 
-## 2. Schema
+## 2. Why one token
+
+The three-token design was correct for a stateless API. This is not one.
+
+```python
+# app/deps.py — the line that decided it
+user = await db.get(User, row.user_id)
+```
+
+Every authenticated request loads the user row, because `is_active` has to be
+checked on each call — a disabled account must stop working immediately, not
+whenever its token happens to expire. Once you are paying that read, a
+self-validating JWT saves nothing. It only takes away the ability to revoke.
+
+So the token became opaque, and validating it became a lookup:
+
+| | old (3 tokens) | now (1 token) |
+|---|---|---|
+| DB reads per request | 1 (`users`) | 2 (`sessions`, `users`) |
+| Logout kills the credential | no — access JWT valid until expiry | **yes, immediately** |
+| Client-side refresh loop needed | yes | no |
+| Cookies | 3 | 1 |
+| Deps | `pyjwt` | — |
+
+The extra read is one index hit on `uq_sessions_token_hash`. In exchange, the
+15-minute access window that existed *only* to bound un-revokable damage is no
+longer needed, and the frontend loses its most error-prone component — the
+401 → refresh → retry interceptor.
+
+**When to reverse this:** multiple services validating the same token without
+sharing a database, or a read volume where one extra indexed lookup per request
+actually shows up in a profile. Neither is true here.
+
+---
+
+## 3. Data model
 
 ### `users`
 
-| column | type | notes |
-|---|---|---|
-| `id` | uuid PK | `gen_random_uuid()` |
-| `name` | varchar(120) | |
-| `email` | **citext** UNIQUE | case-insensitive uniqueness enforced by the DB |
-| `password_hash` | text | bcrypt, cost 12 |
-| `avatar_url` | text NULL | |
-| `language` | varchar(10) | default `'en'` |
-| `role` | enum `user_role` | `USER` \| `ADMIN`, default `USER` |
-| `is_active` | boolean | default `true` |
-| `created_at` / `updated_at` | timestamptz | |
+`email` is `citext` — case-insensitive uniqueness enforced by the DB, not by
+`lower()` calls sprinkled through the service layer. `uq_users_email` is the
+**only** race-free duplicate check; `register` catches `IntegrityError` and maps
+it to 409 rather than doing a select-then-insert.
 
-`email` is `citext`, so `Ada@Example.com` and `ada@example.com` collide at the
-unique index. There are deliberately **no `lower()` calls** in the service layer —
-if you add one you have created a second, weaker source of truth.
+`is_active` gates login *and* every authenticated request. `role` is a Postgres
+enum (`user_role`), which is why `downgrade()` in the first migration drops the
+type explicitly — `drop_table` does not.
 
-Note: `pydantic`'s `EmailStr` lowercases the **domain** but preserves the local
-part's case. So the stored value can be `Ada@example.com`. Compare
-case-insensitively in any test or script that asserts on the email.
+### `sessions`
 
-### `refresh_tokens`
+| Column | Note |
+|---|---|
+| `user_id` | FK `ondelete=CASCADE`, indexed |
+| `token_hash` | sha256 hex, `unique` — the lookup key |
+| `expires_at` | `timestamptz`, checked on every request |
 
-| column | type | notes |
-|---|---|---|
-| `id` | uuid PK | |
-| `user_id` | uuid FK → `users` **ON DELETE CASCADE**, indexed | |
-| `token_hash` | varchar(64) UNIQUE | sha256 hex of the raw token |
-| `expires_at` | timestamptz | now + `REFRESH_TOKEN_EXPIRE_DAYS` |
-| `revoked_at` | timestamptz NULL | set on rotation, logout, password change, reset |
-| `user_agent` | varchar(255) NULL | truncated to 255 |
+One row per logged-in browser. There is no `revoked_at` flag: **revoking is a
+`DELETE`**. A flag would be a second thing to remember to check, and the row has
+no value once dead.
 
-`RefreshToken.is_usable` is the single predicate: `revoked_at IS NULL AND expires_at > now()`.
+`expires_at` is fixed at creation (`now() + SESSION_EXPIRE_DAYS`) and does not
+slide on use. A 7-day-old session ends even for an active user; they log in
+again. Sliding expiry is a deliberate omission, not an oversight.
 
 ### `password_reset_tokens`
 
-| column | type | notes |
+Same shape, plus `used_at` for single-use enforcement. 30-minute TTL.
+
+### Token forms
+
+| | session | reset |
 |---|---|---|
-| `id` | uuid PK | |
-| `user_id` | uuid FK → `users` ON DELETE CASCADE, indexed | |
-| `token_hash` | varchar(64) UNIQUE | sha256 hex |
-| `expires_at` | timestamptz | now + `RESET_TOKEN_EXPIRE_MINUTES` (30) |
-| `used_at` | timestamptz NULL | set on successful reset; makes the token single-use |
+| Form | `secrets.token_urlsafe(32)` | `secrets.token_urlsafe(32)` |
+| Stored as | sha256 hex (64 chars) | sha256 hex (64 chars) |
+| Lifetime | 7 days | 30 min |
+| Transport | `gt_session` cookie | JSON body / log line |
+| Revocable | yes, `DELETE` | yes, `used_at` |
+
+**Why sha256 and not bcrypt:** these are already 256 bits of entropy. bcrypt's
+work factor exists to slow brute-forcing of *low*-entropy secrets like passwords.
+Applying it here would add a KDF to every single request for no security gain.
+Passwords get bcrypt; tokens get sha256.
 
 ---
 
-## 3. Token model
+## 4. The cookie
 
-Three different token kinds, three different jobs. Mixing them up is the most
-likely source of a confusing 401.
+One cookie, set by [`set_session_cookie`](../app/core/cookies.py):
 
-| | Access token | Refresh token | Reset token |
-|---|---|---|---|
-| Form | JWT (HS256) | opaque, `secrets.token_urlsafe(32)` | opaque, `secrets.token_urlsafe(32)` |
-| Stored in DB? | no | yes, as sha256 | yes, as sha256 |
-| Lifetime | 15 min | 7 days | 30 min |
-| Revocable? | no — it just expires | yes | yes (single-use) |
-| Sent as | `Authorization: Bearer <t>` | JSON body | JSON body |
-
-Access token claims: `sub` (user id), `role`, `iat`, `exp`, `typ: "access"`.
-The `typ` check exists so a future token kind signed with the same secret cannot
-be replayed as an access token.
-
-**Why sha256 and not bcrypt for the stored tokens.** These are 256 bits of
-random. bcrypt's work factor exists to slow brute-forcing of *low-entropy*
-human passwords; against a random 256-bit value it buys nothing and costs a
-~100 ms hash on every single refresh. Passwords get bcrypt; tokens get sha256.
-
-**bcrypt's 72-byte limit** is handled in two places: schemas cap the password at
-72 characters (so an over-long password is a clean 400), and `hash_password`
-truncates to 72 bytes (so a multibyte password that exceeds 72 *bytes* at 60
-*characters* cannot raise a 500). Both are needed.
-
----
-
-## 4. Endpoints
-
-Base: `/api/v1`. All bodies are JSON. All responses use the envelopes from Phase 1.
-
-| Method | Path | Auth | Body | Success |
+| Name | Path | httpOnly | Max-Age | Holds |
 |---|---|---|---|---|
-| POST | `/auth/register` | — | `name`, `email`, `password` | **201** `{ user, tokens }` |
-| POST | `/auth/login` | — | `email`, `password` | 200 `{ user, tokens }` |
-| POST | `/auth/refresh` | — (token in body) | `refresh_token` | 200 `TokenPair` |
-| POST | `/auth/logout` | bearer | `refresh_token` | 200 `{ revoked: true }` |
-| POST | `/auth/forgot-password` | — | `email` | 200 `{ message }` (+ `reset_token` when `DEBUG`) |
-| POST | `/auth/reset-password` | — | `token`, `new_password` | 200 `{ message }` |
-| GET | `/auth/me` | bearer | — | 200 `UserRead` |
-| PATCH | `/users/me` | bearer | any of `name`, `avatar_url`, `language` | 200 `UserRead` |
-| PATCH | `/users/me/password` | bearer | `current_password`, `new_password` | 200 `{ message }` |
-| DELETE | `/users/me` | bearer | — | 200 `{ deleted: true }` |
+| `gt_session` | `/` | **yes** | 7 days | the opaque session token |
 
-`TokenPair` = `{ access_token, refresh_token, token_type: "bearer", expires_in: 900 }`.
-`expires_in` is seconds, derived from `ACCESS_TOKEN_EXPIRE_MINUTES` — do not hardcode 900 on the client.
+Flags come from env, so both deployment topologies work without a code change:
 
-Password rule: 8–72 characters. Anything else is a 400 with
-`details[0].field == "password"`.
+| Env var | Local | Production (same-origin) |
+|---|---|---|
+| `COOKIE_SECURE` | `false` (no https on localhost) | `true` |
+| `COOKIE_SAMESITE` | `lax` | `lax` |
+| `COOKIE_DOMAIN` | unset | unset, or `.yourdomain.com` across subdomains |
 
-`PATCH /users/me` uses `model_dump(exclude_unset=True)`: an **omitted** field is
-left alone, an explicit `null` clears it. That distinction is intentional and
-load-bearing — do not "simplify" it to `model_dump()`.
+`Settings` rejects `COOKIE_SAMESITE=none` without `COOKIE_SECURE=true` at import
+— browsers silently drop that combination, which is a miserable thing to debug.
+
+### Why there is no CSRF token
+
+`SameSite=lax` instructs the browser not to attach the cookie to a cross-site
+`POST`/`PUT`/`PATCH`/`DELETE`. That is precisely the attack a CSRF token defends
+against, and it is enforced by the browser rather than by application code.
+Default-on in Chrome since 80, Firefox 96, Safari 16.4.
+
+**The one case where this stops holding** is `COOKIE_SAMESITE=none` — required
+when the frontend is on a genuinely different registrable domain than the API.
+`none` means "do send cross-site," which re-opens CSRF completely.
+
+> If you ever set `COOKIE_SAMESITE=none`, you must add CSRF protection back.
+> The deleted version was never committed, so here is the shape of it: mint a
+> `<random>.<hmac_sha256(random, secret)[:32]>` token, set it in a **non**-httpOnly
+> cookie alongside the session, and reject unsafe methods in a middleware unless
+> the `x-csrf-token` header matches the cookie *and* the signature verifies.
+> The signature is not decoration — a plain double-submit is forgeable by an
+> attacker who can set a cookie on a sibling subdomain.
+>
+> The better fix is usually to avoid needing `none`: proxy `/api/*` from the
+> frontend host to the backend, and the deployment becomes same-origin.
+
+### `clear_session_cookie`
+
+`path` and `domain` must match what `set_cookie` used, or the browser keeps the
+old cookie and logout silently does nothing. This is the single most common
+cookie bug — if logout stops working after a deployment change, check here first.
+
+Clearing the cookie is only half of logout. The row is deleted too, so a copied
+token is dead even though the attacker never received the `Set-Cookie`.
 
 ---
 
-## 5. Flows
+## 5. Endpoints
 
-### Register / login
+Every response uses the `ApiResponse` envelope from `app/core/schemas.py`.
+
+| Method | Path | Auth | Body | Returns |
+|---|---|---|---|---|
+| POST | `/auth/register` | — | `name`, `email`, `password` | 201 `UserRead` + `Set-Cookie` |
+| POST | `/auth/login` | — | `email`, `password` | 200 `UserRead` + `Set-Cookie` |
+| POST | `/auth/logout` | cookie (optional) | — | 200 `{ revoked: true }`, cookie cleared |
+| POST | `/auth/forgot-password` | — | `email` | 200 `{ message }` (+ `reset_token` when `DEBUG`) |
+| POST | `/auth/reset-password` | — | `token`, `new_password` | 200 `{ message }`, cookie cleared |
+| GET | `/auth/me` | cookie | — | 200 `UserRead` |
+| PATCH | `/users/me` | cookie | any of `name`, `avatar_url`, `language` | 200 `UserRead` |
+| PATCH | `/users/me/password` | cookie | `current_password`, `new_password` | 200 `{ message }`, cookie cleared |
+| DELETE | `/users/me` | cookie | — | 200 `{ deleted: true }` |
+
+`/auth/register` and `/auth/login` return **only the user**. There is no
+`csrf_token` and no `expires_in` in the body any more — the session token is in
+the cookie and nothing else needs to travel.
+
+`Password` in [schemas/auth.py](../app/schemas/auth.py) caps at 72 bytes because
+bcrypt hard-errors past that. Capping in the schema makes it a 400 with a field
+name instead of a 500.
+
+---
+
+## 6. `get_current_user`
 
 ```
-POST /auth/register → insert user → insert refresh_token row → commit
-                    → 201 { user, tokens }
+gt_session cookie present?              → else 401 "Not signed in"
+sessions row WHERE token_hash = sha256  → else 401 "Session expired or revoked"
+row.expires_at > now()                  → else 401 "Session expired or revoked"
+users row exists AND is_active          → else 401 "Account not found or disabled"
 ```
 
-Duplicate email is detected by the **unique index** (`IntegrityError` → 409), not
-by a pre-flight `SELECT`. A pre-check is a race: two concurrent registrations
-both see "not taken". Note the handler calls `db.rollback()` before raising —
-after an `IntegrityError` the session is unusable until it does.
+Two queries. The same message covers "no such session" and "expired" on purpose —
+distinguishing them tells an attacker whether a guessed token ever existed.
 
-### Refresh (rotation)
+Exposed as type aliases, so a protected route is just a parameter:
 
-```
-POST /auth/refresh { refresh_token }
-  → sha256 lookup → is_usable? → set revoked_at on the old row
-  → issue a NEW access + NEW refresh → commit
+```python
+async def me(user: CurrentUser) -> ApiResponse[UserRead]: ...
+async def wipe(user: AdminUser) -> ...:                    # 403 if role != ADMIN
 ```
 
-One refresh token, one use. Presenting a spent token is a **401**. If a client
-ever gets two 401s in a row from refresh, it lost the rotated value — it must
-re-login, not retry.
+There is **no `Authorization: Bearer` fallback.** The old one existed because a
+JWT was easy to paste into curl; an opaque session token is not something you can
+mint by hand. `/docs` still works — POST `/auth/login` from the Swagger page and
+the browser holds the cookie for every later call. For curl, use a cookie jar
+(§10).
+
+---
+
+## 7. Flows
+
+### Register
+
+```
+POST /auth/register
+  → INSERT users            (IntegrityError → 409 CONFLICT)
+  → INSERT sessions         (raw token returned, hash stored)
+  → commit → Set-Cookie: gt_session → 201 { user }
+```
+
+The user is created **and signed in** by the same call. One round trip from
+signup form to authenticated app.
+
+### Login
+
+```
+POST /auth/login
+  → SELECT users WHERE email = ?        (citext: case-insensitive)
+  → bcrypt.checkpw                       → else 401 "Invalid email or password"
+  → is_active                            → else 403
+  → INSERT sessions → commit → Set-Cookie → 200 { user }
+```
+
+Wrong email and wrong password give the identical 401 message — no account
+enumeration. A *disabled* account gives 403, which does leak existence; that is
+accepted, because a user who has been disabled needs to be told that rather than
+left retyping a correct password.
+
+Each login inserts its own row. Signing in on a phone does not disturb the
+laptop, and logging out of one leaves the other alone
+(`test_each_login_is_its_own_session`).
+
+### Logout
+
+```
+POST /auth/logout
+  → DELETE FROM sessions WHERE token_hash = ?   (idempotent)
+  → clear cookie → 200
+```
+
+Requires no valid session, on purpose: the whole point of logging out is that the
+session may already be gone. Calling it twice, or with no cookie at all, is 200.
 
 ### Password reset
 
 ```
-POST /auth/forgot-password { email }
-  → user found?  yes → insert reset token row, return it (DEBUG) or log it
-                  no → nothing
-  → 200 with an identical message either way
+POST /auth/forgot-password  → always 200, same message either way
+  → account exists? INSERT password_reset_tokens (30 min)
+  → DEBUG: token in the body. else: token in the log line.
+
+POST /auth/reset-password
+  → SELECT by hash → unused? unexpired?  → else 400
+  → UPDATE users.password_hash
+  → SET used_at
+  → DELETE FROM sessions WHERE user_id = ?     ← every session, everywhere
+  → clear this browser's cookie → 200
 ```
 
-```
-POST /auth/reset-password { token, new_password }
-  → sha256 lookup → not used, not expired → set password_hash
-  → mark used_at → revoke ALL that user's refresh tokens → commit
-```
+`PATCH /users/me/password` does the same `_delete_all_sessions` **and** clears the
+caller's cookie, so changing your password signs out every device including the
+one you did it from. That is the intended behaviour: it is the only sane response
+to "my password may have leaked."
 
-### Sessions killed on credential change
-
-Both `PATCH /users/me/password` and `/auth/reset-password` call
-`_revoke_all_refresh_tokens`. Existing **access** tokens still work for up to
-15 minutes — that is the documented trade-off of stateless access tokens. Only
-refresh is revocable. If you need instant global logout, that needs a token
-version column on `users`, checked in `get_current_user`.
+This is the concrete thing the old design could not do. Deleting session rows
+ends those sessions *now*, where revoking refresh tokens still left every issued
+access JWT valid for up to 15 more minutes.
 
 ---
 
-## 6. Authentication dependency
+## 8. Invariants
 
-`get_current_user` (in [app/deps.py](../app/deps.py)) is the only place a request
-becomes a `User`. It runs, in order:
+Each of these has a test; break one and something in `tests/test_auth.py` fails.
 
-1. Bearer header present? → else 401 `Missing bearer token`
-2. JWT decodes, signature valid, not expired → else 401
-3. `typ == "access"` → else 401 `Wrong token type`
-4. `sub` parses as a UUID → else 401 `Malformed access token`
-5. User row exists **and** `is_active` → else 401 `Account not found or disabled`
-
-`HTTPBearer(auto_error=False)` is deliberate: with `auto_error=True`, FastAPI
-returns its own **403** for a missing header, which is the wrong code and the
-wrong envelope.
-
-Use the aliases, not the functions:
-
-```python
-from app.deps import CurrentUser, DbSession
-
-async def route(db: DbSession, user: CurrentUser) -> ApiResponse[Thing]: ...
-```
-
-`require_admin` / `AdminUser` exists and returns 403 `Admin access required`, but
-nothing uses it until Phase 6. Per the PRD it will be applied at **router**
-level, not per-endpoint.
+1. No session token appears in any response body — only in `Set-Cookie`.
+2. Passwords are bcrypt, never reversible, never echoed.
+3. Raw session and reset tokens are never persisted — only sha256 hex.
+4. `gt_session` is always `httpOnly` and always `SameSite=lax` (or stricter).
+5. Wrong email and wrong password are indistinguishable.
+6. `/auth/forgot-password` answers identically for existing and unknown accounts.
+7. A reset token works exactly once.
+8. Any credential change deletes **every** session for that user.
+9. Logout deletes the row, not just the cookie — a copied token stops working.
+10. Deleting a user leaves no orphan session or reset rows (FK `CASCADE`).
+11. Sessions are per-login and independent.
 
 ---
 
-## 7. Error reference
-
-Every one of these is a real, reachable response.
+## 9. Errors
 
 | Status | Code | Message | Cause |
 |---|---|---|---|
-| 400 | `VALIDATION_ERROR` | `Invalid input` | body failed Pydantic; see `details[]` |
-| 400 | `VALIDATION_ERROR` | `Invalid or expired reset token` | reset token unknown, used, or past `expires_at` |
-| 401 | `UNAUTHORIZED` | `Missing bearer token` | no `Authorization` header |
-| 401 | `UNAUTHORIZED` | `Invalid access token` | bad signature or malformed JWT |
-| 401 | `UNAUTHORIZED` | `Access token expired` | older than 15 min |
-| 401 | `UNAUTHORIZED` | `Wrong token type` | JWT without `typ: "access"` |
-| 401 | `UNAUTHORIZED` | `Malformed access token` | `sub` is not a UUID |
-| 401 | `UNAUTHORIZED` | `Account not found or disabled` | user deleted, or `is_active = false` |
-| 401 | `UNAUTHORIZED` | `Invalid email or password` | login failure — same message for both, by design |
-| 401 | `UNAUTHORIZED` | `Invalid or expired refresh token` | unknown, revoked, rotated, or expired |
+| 401 | `UNAUTHORIZED` | `Not signed in` | no `gt_session` cookie |
+| 401 | `UNAUTHORIZED` | `Session expired or revoked` | unknown token, or `expires_at` passed |
+| 401 | `UNAUTHORIZED` | `Account not found or disabled` | session valid, user gone or `is_active=false` |
+| 401 | `UNAUTHORIZED` | `Invalid email or password` | login failure (either field) |
 | 401 | `UNAUTHORIZED` | `Current password is incorrect` | `PATCH /users/me/password` |
-| 403 | `FORBIDDEN` | `This account has been disabled` | correct password, `is_active = false` |
-| 403 | `FORBIDDEN` | `Admin access required` | `require_admin` on a `USER` |
-| 409 | `CONFLICT` | `An account with that email already exists` | unique index on `email` |
-
-Note the split on disabled accounts: **login** says 403 (credentials were right,
-the account is off), while **`get_current_user`** says 401 (the token is no
-longer usable). That is intentional, not an inconsistency.
+| 403 | `FORBIDDEN` | `This account has been disabled` | login on `is_active=false` |
+| 403 | `FORBIDDEN` | `Admin access required` | `AdminUser` on a non-admin |
+| 409 | `CONFLICT` | `An account with that email already exists` | duplicate email, any casing |
+| 400 | `VALIDATION_ERROR` | `Invalid or expired reset token` | unknown, used, or expired |
+| 400 | `VALIDATION_ERROR` | per-field `details` | pydantic (short password, bad email) |
 
 ---
 
-## 8. Invariants — do not break these
+## 10. Debugging
 
-1. `password_hash` never appears in a response. Guaranteed structurally: `UserRead`
-   has no such field and routes never return ORM objects.
-2. Raw refresh and reset tokens are never persisted. Only sha256 hex. There is a
-   test asserting the raw value is absent from the table.
-3. Passwords and tokens are never logged. `/auth/forgot-password` logs only the email.
-4. `/auth/forgot-password` returns byte-identical output for known and unknown
-   emails (aside from the `DEBUG`-only token) — no account enumeration.
-5. One refresh token, one use.
-6. Any credential change revokes every refresh token for that user.
-7. Deleting a user leaves no token rows — FK `ON DELETE CASCADE`, verified by a test.
-
----
-
-## 9. Inspecting live state
-
-```sql
--- who exists
-SELECT id, name, email, role, is_active, created_at FROM users ORDER BY created_at DESC;
-
--- a user's sessions: which are live, which were revoked
-SELECT left(token_hash, 8) AS t, user_agent, created_at, expires_at, revoked_at,
-       (revoked_at IS NULL AND expires_at > now()) AS usable
-FROM refresh_tokens WHERE user_id = '<uuid>' ORDER BY created_at DESC;
-
--- outstanding reset tokens
-SELECT left(token_hash, 8), expires_at, used_at FROM password_reset_tokens
-WHERE user_id = '<uuid>' ORDER BY created_at DESC;
-
--- orphan check (must return 0)
-SELECT count(*) FROM refresh_tokens r LEFT JOIN users u ON u.id = r.user_id WHERE u.id IS NULL;
-```
-
-Match a raw token you hold against a row:
+Drive the API with a cookie jar — the session cookie is httpOnly, so this is the
+only way from the shell:
 
 ```bash
-./.venv/Scripts/python.exe -c "from app.core.security import hash_token; print(hash_token('<raw>'))"
+curl -sc jar.txt -X POST localhost:8000/api/v1/auth/login \
+  -H 'content-type: application/json' \
+  -d '{"email":"demo@globetrotter.app","password":"demo12345"}'
+
+curl -sb jar.txt localhost:8000/api/v1/auth/me
+
+# no CSRF header — a mutation needs nothing but the cookie
+curl -sb jar.txt -X PATCH localhost:8000/api/v1/users/me \
+  -H 'content-type: application/json' -d '{"language":"fr"}'
 ```
 
-Read an access token's claims without verifying:
-
-```bash
-./.venv/Scripts/python.exe -c "import jwt,sys;print(jwt.decode(sys.argv[1], options={'verify_signature':False}))" <token>
-```
-
-Manually promote someone to admin (there is no endpoint for it until Phase 6):
+Inspect a user's live sessions:
 
 ```sql
-UPDATE users SET role = 'ADMIN' WHERE email = 'you@example.com';
+SELECT id, created_at, expires_at, expires_at > now() AS live
+FROM sessions WHERE user_id = '<uuid>' ORDER BY created_at DESC;
 ```
 
----
+Turn a raw cookie value into the hash you can grep for:
 
-## 10. Debugging playbook
+```bash
+./.venv/Scripts/python.exe -c "from app.core.security import hash_token;import sys;print(hash_token(sys.argv[1]))" <raw>
+```
+
+Orphan check (must be 0):
+
+```sql
+SELECT count(*) FROM sessions s LEFT JOIN users u ON u.id = s.user_id WHERE u.id IS NULL;
+```
+
+Expire a session on demand, to test the 401 path:
+
+```sql
+UPDATE sessions SET expires_at = now() - interval '1 minute' WHERE user_id = '<uuid>';
+```
+
+### Symptom → cause → check
 
 | Symptom | Likely cause | Check |
 |---|---|---|
-| Every request 401 `Missing bearer token` | header not sent, or named wrong | must be exactly `Authorization: Bearer <access_token>` |
-| 401 `Invalid access token` right after login | `JWT_SECRET` changed since the token was issued | restart history / `.env` |
-| Worked for 15 minutes then 401 | access token expired — normal | client must call `/auth/refresh` |
-| 401 `Wrong token type` | the **refresh** token was sent as a bearer | refresh tokens go in the body, not the header |
-| Refresh 401s on a token that just worked | it was already rotated (or a double-submit raced) | `revoked_at` on that row |
-| All sessions dropped unexpectedly | a password change or reset ran | `revoked_at` timestamps cluster at that moment |
-| 401 `Account not found or disabled` | user deleted, or `is_active=false` | `SELECT is_active FROM users …` |
-| Login 403 not 401 | password was correct, account disabled | that is the intended split (§7) |
-| 409 on an email you think is free | `citext` — differs only by case | `SELECT email FROM users WHERE email = 'x@y.com'` |
-| Registration 500 instead of 409 | `db.rollback()` missing before the raise | `auth_service.register` |
-| `/auth/forgot-password` gives no `reset_token` | `DEBUG` is not true, or the email has no account | `settings.debug`; unknown emails never get a token |
-| Reset 400 `Invalid or expired reset token` | already used, past 30 min, or wrong token | `used_at` / `expires_at` |
-| Password rejected at 8+ chars | over 72 characters, or over 72 **bytes** | `details[]` names the field |
-| `PATCH /users/me` blanked a field | client sent explicit `null` | `exclude_unset` treats `null` as "clear" |
-| Tests pass, manual curl fails | different database — tests use `<db>_test` | `alembic current` on the dev DB |
-| `pytest` wiped rows you were looking at | the test DB is truncated per test | you were probably reading the wrong DB |
+| Every request 401 `Not signed in` from the browser | cookie never stored or never sent | `credentials: "include"` on **every** fetch; `COOKIE_SECURE=true` over plain http means the browser drops it |
+| Works in curl, 401 in the browser | CORS | `allow_credentials=True` **and** the exact origin in `CORS_ORIGINS` — a wildcard origin is invalid with credentials |
+| Cookie visible in devtools but still 401 | it is a stale token whose row is gone | look up its `hash_token` in `sessions`; a password change deletes all rows |
+| Logout returns 200 but the user stays signed in | `delete_cookie` path/domain mismatch | they must match `set_cookie` exactly — see [cookies.py](../app/core/cookies.py) |
+| 401 immediately after a password change | correct and intended | every session was deleted; sign in again |
+| 403 `This account has been disabled` | `users.is_active = false` | `UPDATE users SET is_active = true WHERE email = …` |
+| `/auth/forgot-password` gives no token | `DEBUG` is not true | it is logged instead — `log.info("password reset token issued for …")` |
+| 409 on an email that "isn't taken" | `citext` — casing does not create a new account | `SELECT email FROM users WHERE email = 'That@Example.com'` |
+| Cookie missing entirely in production | `SameSite=none` without `Secure` | `Settings` refuses to boot on that combination — read the startup error |
 
 ---
 
-## 11. Test map
+## 11. Tests
 
-[tests/test_auth.py](../tests/test_auth.py) · [tests/test_users.py](../tests/test_users.py) ·
-fixtures in [tests/conftest.py](../tests/conftest.py)
+`tests/test_auth.py` (17) + `tests/test_users.py` (3), against an isolated
+`globetrotter_test` database.
 
 | Test | Guards |
 |---|---|
-| `test_register_returns_user_and_tokens` | 201, token pair, `expires_in`, no password field leaks |
+| `test_register_returns_the_user_and_nothing_else` | 201, no token in the body |
+| `test_session_cookie_carries_the_right_flags` | httpOnly, SameSite, path |
 | `test_duplicate_email_is_case_insensitive_conflict` | `citext` + 409 |
-| `test_short_password_is_a_validation_error` | 400 envelope with `details[0].field` |
-| `test_login_and_me` | login → bearer → `/auth/me` |
-| `test_login_with_wrong_password_is_401` | no enumeration via status |
-| `test_me_without_token_is_401_envelope` | exact 401 body |
-| `test_refresh_rotates_and_burns_the_old_token` | rotation, and reuse is 401 |
-| `test_logout_revokes_the_refresh_token` | revocation |
-| `test_forgot_password_never_reveals_…` | identical response for known/unknown |
-| `test_reset_password_flow` | reset works, old password dies, sessions die, token is single-use |
-| `test_expired_reset_token_is_rejected` | `expires_at` honoured |
-| `test_refresh_tokens_are_stored_hashed` | raw token absent from the table, 64-char hashes |
-| `test_deleting_the_account_leaves_no_orphan_tokens` | FK cascade |
-| `test_patch_me_only_touches_supplied_fields` | `exclude_unset` |
-| `test_change_password_signs_out_every_session` | global revoke |
-| `test_change_password_with_wrong_current_is_401` | current-password check |
+| `test_short_password_is_a_validation_error` | 400 with a field name |
+| `test_the_cookie_alone_authenticates_every_method` | GET **and** PATCH need no headers |
+| `test_login_with_wrong_password_is_401` | no enumeration |
+| `test_me_without_a_cookie_is_401` | exact error envelope |
+| `test_an_unknown_session_token_is_401` | a forged token is not accepted |
+| `test_an_expired_session_is_401` | `expires_at` is enforced |
+| `test_each_login_is_its_own_session` | per-login rows, independent logout |
+| `test_logout_deletes_the_row_and_clears_the_cookie` | revocation is real, not cosmetic |
+| `test_logout_without_a_cookie_is_still_200` | idempotent |
+| `test_forgot_password_never_reveals_…` | identical answers |
+| `test_reset_password_flow` | old password dead, all sessions dead, token single-use |
+| `test_expired_reset_token_is_rejected` | TTL |
+| `test_session_tokens_are_stored_hashed` | raw token absent from the table |
+| `test_deleting_the_account_leaves_no_orphan_sessions` | FK CASCADE |
+| `test_change_password_signs_out_every_session` | credential change → full sign-out |
 
-### Test harness facts
+Fixtures in [tests/conftest.py](../tests/conftest.py):
 
-- Tests run against a **separate** `globetrotter_test` database, created on first
-  run. `conftest.py` rewrites `DATABASE_URL` in `os.environ` *before* anything
-  imports `Settings` — that is why the imports there sit below code and carry
-  `# noqa: E402`.
-- Schema is built with `Base.metadata.create_all`, **not** Alembic. Faster, but it
-  means a broken migration will not fail the suite. Migrations are verified
-  separately with an `upgrade head` → `downgrade base` → `upgrade head` roundtrip.
-- Every table is `TRUNCATE … CASCADE`d before each test.
-- `DEBUG=true` is forced so `/auth/forgot-password` hands back the reset token.
-  Side effect: SQLAlchemy `echo` is on, so failures print a lot of SQL.
-- One event loop for the whole session (`asyncio_default_*_loop_scope = "session"`)
-  so the asyncpg pool survives between tests. Set these back to `function` and
-  you get "attached to a different loop" errors.
+- `auth` — registers a user; the session cookie is left in `client`'s jar, so
+  every later call through `client` is authenticated with **no headers at all**.
+  It returns the `UserRead` dict.
+- `make_client` — a fresh client with an explicit cookie jar, for tests that need
+  a second browser or a replayed dead token.
+- `_clean_tables` — `TRUNCATE … CASCADE` between tests.
 
 ---
 
-## 12. Deferred out of this phase
+## 12. Deliberately not built
 
-| Item | Where it goes |
+| Thing | Why |
 |---|---|
-| `/users/me/saved-destinations` | Phase 3 — needs the `cities` table |
-| Real email delivery for password reset | whenever an SMTP/provider credential exists; marked with a `ponytail:` comment in `routes/auth.py` |
-| Rate limiting on `/auth/login` and `/auth/forgot-password` (5/min) | Phase 7 |
-| Avatar **upload** (the column exists, the endpoint does not) | Phase 4, alongside trip cover upload |
-| Anything that consumes `require_admin` | Phase 6 |
+| Sliding session expiry | 7 fixed days is fine; renewal-on-use is a write per request |
+| A "your sessions" management screen | nothing consumes it; `user_agent` was dropped with the old table |
+| Expired-row cleanup job | `sessions` and `password_reset_tokens` grow slowly. A periodic `DELETE WHERE expires_at < now()` is the fix when it matters |
+| CSRF token | `SameSite=lax` covers it — see §4, including exactly when this reverses |
+| Bearer-header auth | opaque tokens cannot be hand-minted; use a cookie jar |
+| Mailer | no SMTP credential. Token is returned in `DEBUG`, logged otherwise |
+| Email verification, OAuth, 2FA, rate limiting | out of scope for the hackathon build |

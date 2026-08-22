@@ -188,18 +188,32 @@ async def seed_activities(db: AsyncSession, city_ids: dict[tuple[str, str], uuid
     return len(rows)
 
 
+DEMO_PROFILE = {
+    "first_name": "Demo",
+    "last_name": "Traveller",
+    "phone": "+919000000000",
+    "city": "Bengaluru",
+    "country": "India",
+    "additional_info": "Demo account. Vegetarian, prefers window seats.",
+}
+
+
 async def seed_demo_user(db: AsyncSession) -> User:
     user = (
         await db.execute(select(User).where(User.email == DEMO_EMAIL))
     ).scalar_one_or_none()
     if user is None:
         user = User(
-            name="Demo Traveller",
-            email=DEMO_EMAIL,
-            password_hash=hash_password(DEMO_PASSWORD),
+            email=DEMO_EMAIL, password_hash=hash_password(DEMO_PASSWORD), **DEMO_PROFILE
         )
         db.add(user)
-        await db.flush()
+    else:
+        # Backfill only what is missing, so re-running the seed after a schema
+        # change fills in new columns without stamping over local edits.
+        for field, value in DEMO_PROFILE.items():
+            if getattr(user, field, None) in (None, ""):
+                setattr(user, field, value)
+    await db.flush()
     return user
 
 

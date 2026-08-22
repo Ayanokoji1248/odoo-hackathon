@@ -22,6 +22,7 @@ Derived from [PRD.md](PRD.md). Scope: `server/` only.
 | 1 | [docs/phase-1-foundation.md](docs/phase-1-foundation.md) |
 | 2 | [docs/phase-2-auth-and-users.md](docs/phase-2-auth-and-users.md) |
 | 3 | [docs/phase-3-catalog.md](docs/phase-3-catalog.md) |
+| 4 auth retrofit | [docs/phase-4-production-auth.md](docs/phase-4-production-auth.md) |
 
 ---
 
@@ -33,7 +34,7 @@ Boot a server that connects to a real DB and answers with the standard envelope.
 |---|---|
 | `docker-compose.yml` | Postgres 16, named volume, healthcheck |
 | `requirements.txt` | pinned deps |
-| `.env.example` / `.env` | `DATABASE_URL`, `JWT_SECRET`, `CORS_ORIGINS`, … |
+| `.env.example` / `.env` | `DATABASE_URL`, `CORS_ORIGINS`, `COOKIE_*`, … |
 | `app/core/config.py` | `Settings(BaseSettings)` — validated at import, app refuses to boot on a missing var |
 | `app/core/exceptions.py` | `ApiError` + 3 handlers (`ApiError`, `RequestValidationError`, `HTTPException`) |
 | `app/core/schemas.py` | `ApiResponse[T]`, `PageMeta`, `ErrorBody` |
@@ -50,20 +51,38 @@ Boot a server that connects to a real DB and answers with the standard envelope.
 
 ## Phase 2 — Auth & users ✅
 
+> Superseded for runtime auth by
+> [docs/phase-4-production-auth.md](docs/phase-4-production-auth.md). This
+> section records the temporary Phase 2 implementation.
+
 | Area | Built |
 |---|---|
-| Models | `users`, `refresh_tokens`, `password_reset_tokens` — `citext` extension in the first migration; `gen_random_uuid()` needs no `pgcrypto` on PG 13+ |
-| Security | `app/core/security.py` — bcrypt hash/verify, JWT encode/decode, access 15 min / refresh 7 d |
+| Models | `users`, `sessions`, `password_reset_tokens` — `citext` extension in the first migration; `gen_random_uuid()` needs no `pgcrypto` on PG 13+ |
+| Security | `app/core/security.py` — bcrypt hash/verify, opaque token generation, sha256 token hashing |
 | Deps | `app/deps.py` — `get_current_user`, `require_admin` |
-| Routes | `/auth/{register,login,refresh,logout,forgot-password,reset-password,me}`, `/users/me` (PATCH · password · DELETE) |
-| Service | `auth_service.py` — refresh rotation (revoke old row, insert new), password change and reset revoke **all** refresh tokens |
-| Tests | 18 route-level tests against an isolated `<db>_test` database |
+| Routes | `/auth/{register,login,logout,forgot-password,reset-password,me}`, `/users/me` (PATCH · password · DELETE) |
+| Service | `auth_service.py` — one session row per login; password change and reset **delete every** session for that user |
+| Transport | **one opaque session token in one `httpOnly` cookie** (simplified after Phase 3, before Phase 4) |
+| Tests | 20 route-level tests against an isolated `<db>_test` database |
 
-Refresh and reset tokens are stored as **sha256 hashes**, not bcrypt — they already carry 256 bits of entropy, and bcrypt's work factor exists to slow guessing of low-entropy passwords.
+Originally a JWT access token + rotating refresh token + signed double-submit CSRF
+token. Simplified to a single DB-backed session cookie: `get_current_user` had to
+read the user row anyway to check `is_active`, so the JWT's statelessness saved no
+round trip while costing revocability — and `SameSite=lax` already blocks the
+cross-site POST the CSRF token defended against. Logout and password changes now
+kill sessions **immediately** rather than leaving access tokens valid for up to 15
+more minutes, and the frontend needs no 401-refresh-retry interceptor. `pyjwt` was
+dropped. Cookie `Secure`/`SameSite`/domain stay env-configurable.
 
-**Deferred:** saved-destinations moves to Phase 3 (it needs `cities`); no mailer is wired up, so `/auth/forgot-password` returns the reset token in the response when `DEBUG=true` and logs it otherwise.
+> `COOKIE_SAMESITE=none` — a frontend on a genuinely different domain — re-opens
+> CSRF and would require adding the token back. Prefer proxying `/api/*` from the
+> frontend host so the deployment stays same-origin.
 
-**Done — AC 1.** Register → login → refresh → logout round-trips; a rotated refresh token 401s on reuse; `/auth/me` 401s without a token; a used or expired reset token is rejected; deleting an account leaves no orphan token rows.
+Session and reset tokens are stored as **sha256 hashes**, not bcrypt — they already carry 256 bits of entropy, and bcrypt's work factor exists to slow guessing of low-entropy passwords.
+
+**Deferred:** saved-destinations moves to Phase 3 (it needs `cities`); no mailer is wired up, so `/auth/forgot-password` returns the reset token in the response when `DEBUG=true` and logs it otherwise; expired `sessions` / `password_reset_tokens` rows are never pruned.
+
+**Done — AC 1.** Register → login → logout round-trips; a revoked or expired session token 401s; `/auth/me` 401s without a cookie; sessions are per-login and independent; a used or expired reset token is rejected; a credential change signs out every device; deleting an account leaves no orphan rows.
 
 ---
 

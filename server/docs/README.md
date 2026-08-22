@@ -1,18 +1,19 @@
-# Backend docs
+# Backend Docs
 
-One document per completed phase. Each one is written for **debugging months later**:
+One document per completed phase. Each one is written for debugging months later:
 what landed, the exact contracts, the invariants that must stay true, and a
-symptom → cause → check table for when something breaks.
+symptom to cause to check table for when something breaks.
 
 | Phase | Doc | Covers |
 |---|---|---|
 | 1 | [phase-1-foundation.md](phase-1-foundation.md) | config, DB session, envelopes, exception handlers, Alembic wiring, `/health` |
-| 2 | [phase-2-auth-and-users.md](phase-2-auth-and-users.md) | register/login/refresh/logout, password reset, profile, tokens, `get_current_user` |
-| 3 | [phase-3-catalog.md](phase-3-catalog.md) | cities + activities catalog, search/filter/pagination, saved destinations, seed data |
+| 2 | [phase-2-auth-and-users.md](phase-2-auth-and-users.md) | temporary cookie sessions, users, password reset, profile |
+| 3 | [phase-3-catalog.md](phase-3-catalog.md) | cities and activities catalog, search/filter/pagination, saved destinations, seed data |
+| 4 | [phase-4-production-auth.md](phase-4-production-auth.md) | JWT access cookie, rotating refresh cookie, session management |
 
-Spec: [../PRD.md](../PRD.md) · Phase plan: [../IMPLEMENTATION_PLAN.md](../IMPLEMENTATION_PLAN.md)
+Spec: [../PRD.md](../PRD.md) | Phase plan: [../IMPLEMENTATION_PLAN.md](../IMPLEMENTATION_PLAN.md)
 
-## Shared debugging entry points
+## Shared Debugging Entry Points
 
 ```bash
 # is the DB up and reachable?
@@ -33,6 +34,9 @@ docker exec -it globetrotter-db psql -U globetrotter -d globetrotter
 # reload the catalog (idempotent)
 ./.venv/Scripts/python.exe -m app.db.seed
 ```
+
+Auth is now two httpOnly cookies: `gt_access` at `/` and `gt_refresh` at
+`/api/v1/auth`. See [phase-4-production-auth.md](phase-4-production-auth.md).
 
 Every response carries an `x-request-id` header; it is echoed from the request if
 you send one. Grep logs by it when tracing a single call.

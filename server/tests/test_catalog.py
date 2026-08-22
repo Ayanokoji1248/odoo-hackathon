@@ -166,31 +166,31 @@ async def test_save_list_and_remove_a_destination(client, auth, catalog):
     url = "/api/v1/users/me/saved-destinations"
     city_id = str(catalog["cities"]["prague"])
 
-    assert (await client.get(url, headers=auth["headers"])).json()["data"] == []
+    assert (await client.get(url)).json()["data"] == []
 
-    added = await client.post(url, json={"city_id": city_id}, headers=auth["headers"])
+    added = await client.post(url, json={"city_id": city_id})
     assert added.status_code == 201, added.text
     assert added.json()["data"]["name"] == "Prague"
 
-    assert names(await client.get(url, headers=auth["headers"])) == ["Prague"]
+    assert names(await client.get(url)) == ["Prague"]
 
-    again = await client.post(url, json={"city_id": city_id}, headers=auth["headers"])
+    again = await client.post(url, json={"city_id": city_id})
     assert again.status_code == 409
 
-    removed = await client.delete(f"{url}/{city_id}", headers=auth["headers"])
+    removed = await client.delete(f"{url}/{city_id}")
     assert removed.status_code == 200
-    assert (await client.get(url, headers=auth["headers"])).json()["data"] == []
+    assert (await client.get(url)).json()["data"] == []
 
-    assert (await client.delete(f"{url}/{city_id}", headers=auth["headers"])).status_code == 404
+    assert (await client.delete(f"{url}/{city_id}")).status_code == 404
 
 
 async def test_saving_an_unknown_or_retired_city_is_a_404(client, auth, catalog):
     url = "/api/v1/users/me/saved-destinations"
-    unknown = await client.post(url, json={"city_id": str(uuid.uuid4())}, headers=auth["headers"])
+    unknown = await client.post(url, json={"city_id": str(uuid.uuid4())})
     assert unknown.status_code == 404
 
     retired = await client.post(
-        url, json={"city_id": str(catalog["cities"]["retired"])}, headers=auth["headers"]
+        url, json={"city_id": str(catalog["cities"]["retired"])}
     )
     assert retired.status_code == 404
 
@@ -203,9 +203,9 @@ async def test_deleting_a_user_drops_their_saved_destinations(client, auth, cata
 
     url = "/api/v1/users/me/saved-destinations"
     await client.post(
-        url, json={"city_id": str(catalog["cities"]["paris"])}, headers=auth["headers"]
+        url, json={"city_id": str(catalog["cities"]["paris"])}
     )
-    await client.delete("/api/v1/users/me", headers=auth["headers"])
+    await client.delete("/api/v1/users/me")
 
     async with SessionLocal() as db:
         assert await db.scalar(select(func.count()).select_from(SavedDestination)) == 0

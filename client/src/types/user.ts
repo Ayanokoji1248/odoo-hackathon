@@ -1,11 +1,16 @@
+export type UserRole = "user" | "admin";
+
 export interface User {
   id: string;
   name: string;
+  firstName: string;
+  lastName: string;
   email: string;
+  phone?: string;
   avatarUrl?: string;
   location?: string;
   bio?: string;
-  role: "user" | "admin";
+  role: UserRole;
   memberSince: string; // ISO date
   preferences: UserPreferences;
   savedCityIds: string[];

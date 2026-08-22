@@ -1,7 +1,7 @@
 import hashlib
 import secrets
-import uuid
 from datetime import UTC, datetime, timedelta
+from uuid import UUID
 
 import bcrypt
 import jwt
@@ -10,6 +10,7 @@ from app.core.config import settings
 from app.core.exceptions import ApiError
 
 BCRYPT_MAX_BYTES = 72
+JWT_ALGORITHM = "HS256"
 
 
 def hash_password(password: str) -> str:
@@ -26,7 +27,8 @@ def verify_password(password: str, password_hash: str) -> bool:
 
 
 def new_opaque_token() -> str:
-    """Refresh / reset tokens. Opaque and random, not a JWT - these are revocable."""
+    """Session / reset tokens. Random and meaningless on their own, so the only
+    way to validate one is to look it up - which is what makes it revocable."""
     return secrets.token_urlsafe(32)
 
 
@@ -36,25 +38,24 @@ def hash_token(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
 
 
-def create_access_token(user_id: uuid.UUID, role: str) -> str:
+def create_access_token(user_id: UUID, session_id: UUID) -> str:
     now = datetime.now(UTC)
     payload = {
         "sub": str(user_id),
-        "role": role,
+        "sid": str(session_id),
         "iat": now,
         "exp": now + timedelta(minutes=settings.access_token_expire_minutes),
-        "typ": "access",
     }
-    return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
+    return jwt.encode(payload, settings.jwt_secret, algorithm=JWT_ALGORITHM)
 
 
 def decode_access_token(token: str) -> dict:
     try:
-        payload = jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
+        payload = jwt.decode(token, settings.jwt_secret, algorithms=[JWT_ALGORITHM])
     except jwt.ExpiredSignatureError:
         raise ApiError("UNAUTHORIZED", "Access token expired") from None
     except jwt.InvalidTokenError:
         raise ApiError("UNAUTHORIZED", "Invalid access token") from None
-    if payload.get("typ") != "access":
-        raise ApiError("UNAUTHORIZED", "Wrong token type")
+    if not payload.get("sub") or not payload.get("sid"):
+        raise ApiError("UNAUTHORIZED", "Invalid access token")
     return payload
