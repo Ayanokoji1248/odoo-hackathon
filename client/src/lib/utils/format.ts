@@ -1,6 +1,8 @@
 /** Formatting helpers used across the app. */
 
-export function formatCurrency(amount: number, currency = "INR"): string {
+export const APP_CURRENCY = "USD";
+
+export function formatCurrency(amount: number, currency = APP_CURRENCY): string {
   const locale = currency === "INR" ? "en-IN" : "en-US";
   return new Intl.NumberFormat(locale, {
     style: "currency",

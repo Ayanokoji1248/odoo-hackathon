@@ -1,6 +1,7 @@
 # GlobeTrotter Backend — Implementation Plan
 
-Derived from [PRD.md](PRD.md). Scope: `server/` only.
+Derived from [PRD.md](PRD.md). Scope: `server/`, plus the client-wiring phase
+that turns those endpoints into a working app.
 
 **Stack as built:** Python 3.12 · FastAPI · SQLAlchemy 2.0 async + asyncpg · PostgreSQL 16 (Docker) · Alembic · Pydantic v2
 
@@ -25,6 +26,7 @@ Derived from [PRD.md](PRD.md). Scope: `server/` only.
 | 4 | [docs/phase-5-trips-and-itinerary.md](docs/phase-5-trips-and-itinerary.md) - file says 5; `phase-4-*` was taken by the auth retrofit |
 | 5 | [docs/phase-6-budget-and-dashboard.md](docs/phase-6-budget-and-dashboard.md) - file numbers stay one ahead of plan phases |
 | 4 auth retrofit | [docs/phase-4-production-auth.md](docs/phase-4-production-auth.md) |
+| 6 (frontend) | [../client/docs/frontend-wiring.md](../client/docs/frontend-wiring.md) |
 
 ---
 
@@ -71,10 +73,22 @@ Originally a JWT access token + rotating refresh token + signed double-submit CS
 token. Simplified to a single DB-backed session cookie: `get_current_user` had to
 read the user row anyway to check `is_active`, so the JWT's statelessness saved no
 round trip while costing revocability — and `SameSite=lax` already blocks the
-cross-site POST the CSRF token defended against. Logout and password changes now
-kill sessions **immediately** rather than leaving access tokens valid for up to 15
-more minutes, and the frontend needs no 401-refresh-retry interceptor. `pyjwt` was
-dropped. Cookie `Secure`/`SameSite`/domain stay env-configurable.
+cross-site POST the CSRF token defended against. Logout and password changes
+killed sessions **immediately** rather than leaving access tokens valid for up to
+15 more minutes, and the frontend needed no 401-refresh-retry interceptor. `pyjwt`
+was dropped. Cookie `Secure`/`SameSite`/domain stay env-configurable.
+
+> **The immediacy claim above no longer holds - Phase 4 brought JWT access tokens
+> back.** `get_current_user` verifies the signature and the user row but
+> deliberately does *not* check session revocation; see
+> `test_access_hot_path_does_not_check_session_revocation`, which asserts it. So a
+> revoked session keeps read access until its access token expires
+> (`access_token_expire_minutes`, 15) - it just cannot renew, because
+> `/auth/refresh` 401s at once. Verified live across two cookie jars: after A
+> changes the password, A is 401 immediately (cookies cleared) while B still gets
+> 200 on `/auth/me` and 401 on `/auth/refresh`. Frontend copy must therefore say
+> "signed out here now, other devices within 15 minutes"; `SettingsPanel` and
+> `ResetPasswordForm` do.
 
 > `COOKIE_SAMESITE=none` — a frontend on a genuinely different domain — re-opens
 > CSRF and would require adding the token back. Prefer proxying `/api/*` from the
@@ -165,19 +179,119 @@ as `undated_total` / `unassigned_total` rather than spread around.
 
 ---
 
-## Phase 6 — Sharing & admin
+## Phase 6 — Frontend wiring (the mock purge)
 
-| Area | Work |
-|---|---|
-| Sharing | `POST/DELETE /trips/{id}/share` (`secrets.token_urlsafe(10)`), `GET /public/trips/{slug}` (no auth, 404 on non-public — never 403), `POST /public/trips/{slug}/copy` |
-| Copy | Deep copy trip → stops → activities → budget items in one transaction; dates rebased to today or client `start_date` preserving offsets; `is_public=false`, no slug, `copied_from_trip_id` set |
-| Admin | `require_admin` at **router** level; `/admin/stats`, `/admin/cities/top`, `/admin/activities/top`, `/admin/users` (+ PATCH role/is_active), catalog CRUD with soft delete |
+Every endpoint through Phase 5 exists and is tested. The client renders it
+**read-only**: pages fetch real data, but almost every write is a `toast()` over
+local `useState`. This phase deletes `client/src/data/mock/` one screen at a time.
 
-**Done when:** AC 7, 8. Public payload exposes no owner PII beyond display name.
+**Rule for every task:** API first — verify the endpoint (or build it) with tests —
+then bind the component, then delete the mock import. A task is done when nothing
+on that screen is lost by a reload that shouldn't be, and no `@/data/mock` import
+remains in it.
+
+| # | Task | API | Client work | Status |
+|---|---|---|---|---|
+| 1 | Trip edit + delete | `PATCH` / `DELETE /trips/{id}` — built in Phase 4 | `updateTrip()`; `TripEditDialog`; real handlers on `TripCard` + `TripHeader` | ✅ |
+| 2 | Itinerary stop CRUD + reorder | `/trips/{id}/stops` — Phase 4 | `ItineraryBuilder` + `StopDialog` replace `SectionItineraryBuilder`; add / patch / delete / reorder | ✅ |
+| 3 | Trip activity add / remove | `/trips/{id}/stops/{sid}/activities` — Phase 4, **+ city-match guard added** | `ActivityPickerDialog` per stop; `AddToTripDialog` on the catalogue card; remove from the itinerary | ✅ |
+| 4 | Save / unsave a city | `/users/me/saved-destinations` — Phase 3 | `CityCard` Save/Saved toggle; `CitiesExplorer` loads the saved set; `/saved` drops a card on un-save | ✅ |
+| 5 | Manual budget items | `/trips/{id}/budget-items` — Phase 5 | `ManualCosts` card on the budget page: add, edit amount, remove | ✅ |
+| 6 | Profile + account writes | `PATCH /users/me`, `/me/password`, `DELETE /me` — Phase 2 | `SettingsPanel` rebuilt: Profile / Password / Account, all submitting. Fake Preferences + Privacy sections deleted | ✅ |
+| 7 | Reset password | `POST /auth/reset-password` — Phase 2 | `/reset-password` page; `/forgot-password` surfaces the DEBUG token so the flow is completable without a mailer | ✅ |
+| 8 | Share + public view + copy | **built — see Phase 7** | `ShareDialog` on card/header/builder, real `/shared/[slug]`, working copy; `/shared` is now "my shared trips" | ✅ |
+| 9 | Admin dashboard | **built — see Phase 7** | Real stats/charts, catalog CRUD, user table. Separate `/admin/login`. `data/mock/admin.ts` deleted | ✅ |
+| 10 | Community feed | none built, none planned | The last mock. A public directory is **not** implied by link-sharing - it needs its own opt-in, so this is a product decision, not a wiring job | ⬜ |
+
+Tasks 1-7 need **no new backend work** — that is the whole point of this ordering.
+Seven screens become real before a single new route is written; the unused
+functions already sitting in `client/src/lib/api/` are most of the work.
+
+`trips.share_slug` and `copied_from_trip_id` already exist as columns (Phase 4
+added them); only the routes are missing, so task 8 is additive.
+
+**Found in task 2, fixed in task 3:** `add_activity` validated `scheduled_date`
+against the stop and the activity against the catalog, but never that the
+activity's `city_id` matched the stop's - a Udaipur activity attached happily to a
+New York stop, and the per-city budget rollup then filed its cost under New York.
+Now a 400, with 2 tests (`test_a_catalog_activity_from_another_city_is_rejected`,
+`test_a_custom_activity_needs_no_city`). Name-only custom activities are still
+unrestricted: they have no catalog row, so no city to match. **128 tests.**
+
+**Cut in task 6, because nothing backs them:** the Preferences section (travel
+style, currency) and the whole Privacy section (four toggles) had no columns behind
+them - every switch reset on reload. `User.preferences` in the client types is
+still mostly invented defaults from `toUser()`; `language` is the only real one.
+Restoring any of it is a migration plus an endpoint, not a wiring job.
+
+**Done when:** `grep -r "@/data/mock" client/src` returns only what Phase 7 owns.
 
 ---
 
-## Phase 7 — Hardening
+## Phase 7 — Sharing & admin
+
+| Area | Work |
+|---|---|
+| Sharing ✅ | `POST/DELETE /trips/{id}/share` (`secrets.token_urlsafe(10)`), `GET /public/trips/{slug}` + `/{slug}/budget` (no auth, 404 on non-public — never 403), `POST /public/trips/{slug}/copy` |
+| Copy ✅ | Deep copy trip → stops → activities → budget items in one transaction; dates rebased to today or client `start_date` preserving offsets; `is_public=false`, no slug, `copied_from_trip_id` set |
+| Admin ✅ | `require_admin` at **router** level; `/admin/stats`, `/admin/cities/top`, `/admin/activities/top`, `/admin/users` (+ PATCH role/is_active), catalog CRUD with soft delete |
+
+**Admin shipped ahead of sharing** (asked for first). 34 new tests. **Sharing then
+landed too: 13 more, 173 total.**
+
+Sharing notes worth keeping:
+
+- **Sharing is idempotent; un-sharing is not.** A second `POST /share` returns the
+  slug it already had, so a link already sent out keeps working. `DELETE /share`
+  clears the *slug* as well as the flag - re-sharing mints a new one, because
+  reviving the old link would hand access back to everyone who ever saw it. Both
+  behaviours are asserted.
+- **404, never 403, on a non-public trip.** A 403 confirms the trip exists, which
+  is exactly what someone walking the slug space wants to learn.
+- **PII:** `PublicTripRead` adds only `owner_name` to `TripRead`, which carries no
+  `user_id`. A test greps the raw response body for the registered account's
+  email, phone, city and bio - a leak nested inside a stop would fail it too.
+- `copy_count` comes from `COUNT(copied_from_trip_id)`. Real, and no new column.
+  There is deliberately **no view counter** - that needs a column and a write on
+  every public GET, and nobody asked for it, so the UI shows copies instead of
+  inventing views.
+- **`duplicate_trip` was silently dropping budget items** - so a copied trip lost
+  its flights and hotels and its total quietly fell to activities only. Fixed in the
+  shared function, which also fixes the pre-existing `POST /trips/{id}/duplicate`.
+  Stop ids are remapped so an item attributed to a city follows the right one, and
+  a dated item shifts by the same offset while an undated one stays undated.
+- Live check: `scripts/check_share.py` (40 assertions, including the PII grep and
+  the dead-link-stays-dead sequence).
+
+Notes worth keeping:
+
+- `require_admin` sits on the `APIRouter`, not on each route - a leaf that forgets
+  its own check is the failure mode that cannot happen this way. Tests assert 401
+  signed out and 403 for a plain user on every GET *and* on the writes.
+- **No hard delete anywhere.** Users are deactivated (`get_current_user` checks
+  `is_active`, so it bites on the next request); catalog rows are hidden with
+  `is_active=false`, because trips snapshot them and `activities.city_id` is
+  `ON DELETE RESTRICT`.
+- An admin cannot demote or deactivate **themselves** - that is the one mistake
+  the UI could not undo. A "last active admin" guard was written and then deleted:
+  it was unreachable, since the actor is always an active admin, so demoting
+  anyone else always leaves at least one.
+- `top_cities` ranks by `trip_stops` rows, not `cities.popularity_score` - the
+  latter is an editorial number an admin types in, so ranking by it would just
+  reflect their own guesses back at them.
+- `avg_trip_budget` reuses `budget_service`'s arithmetic (activities x travelers,
+  manual items as entered), asserted against a hand calculation.
+- The seed now creates `admin@globetrotter.app` / `admin12345`, and re-asserts the
+  role on every run. Without it the panel is unreachable without a psql session.
+- Live check against the running dev server: `scripts/check_admin.py`. The suite
+  covers the logic on an isolated DB; that script catches the things only a real
+  server shows - an unmounted router, an unrun seed, a cookie flag over real HTTP.
+
+**Done - AC 7, 8.** The public payload exposes no owner PII beyond the display name.
+
+---
+
+## Phase 8 — Hardening
 
 - `slowapi`: 5/min on `/auth/login` + `/auth/forgot-password`, 100/min global
 - `structlog` JSON + request-id; assert no passwords/tokens in log output
@@ -201,4 +315,4 @@ admin analytics → copy trip → per-city budget rollup.
 1. **Currency** — per-trip, no FX in v1.
 2. **Inter-stop transport** — `TRANSPORT` budget item, not an entity.
 3. **Activity costs** — per-person; multiplied by `travelers` in `budget_service`, and the response says so.
-4. **Copied trips** — keep `copied_from_trip_id`; the "N copies" stat is a Phase 6 extra only if time allows.
+4. **Copied trips** — keep `copied_from_trip_id`; the "N copies" stat is a Phase 7 extra only if time allows.

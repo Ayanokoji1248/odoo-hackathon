@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Bell, Plus, User, Settings, LogOut, Menu, X, Shield, ChevronDown } from "lucide-react";
+import { Bell, Bookmark, Plus, User, Settings, LogOut, Menu, X, Shield, ChevronDown } from "lucide-react";
 import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
 import { Dropdown, DropdownItem } from "@/components/ui/Dropdown";
@@ -102,6 +102,18 @@ export function Navbar() {
           <Button size="sm" className="hidden sm:inline-flex" onClick={() => router.push("/trips/create")}>
             <Plus className="h-4 w-4" /> Plan a trip
           </Button>
+
+          <Link
+            href="/saved"
+            aria-label="Saved destinations"
+            title="Saved"
+            className={cn(
+              "rounded-lg p-2 transition-colors hover:bg-surface-muted",
+              pathname === "/saved" ? "text-primary" : "text-text-secondary"
+            )}
+          >
+            <Bookmark className="h-5 w-5" />
+          </Link>
 
           <button aria-label="Notifications" className="relative rounded-lg p-2 text-text-secondary hover:bg-surface-muted">
             <Bell className="h-5 w-5" />

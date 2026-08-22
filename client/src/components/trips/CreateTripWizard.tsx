@@ -56,7 +56,7 @@ export function CreateTripWizard() {
   const [endDate, setEndDate] = useState("");
   const [cityIds, setCityIds] = useState<string[]>([]);
   const [activityIds, setActivityIds] = useState<string[]>([]);
-  const [budget, setBudget] = useState("100000");
+  const [budget, setBudget] = useState("2500");
   const [saving, setSaving] = useState(false);
 
   // Real catalog rows: the wizard has to submit API uuids, and mock ids would 404.
@@ -260,7 +260,7 @@ export function CreateTripWizard() {
           <div className="space-y-4">
             <h2 className="text-h3 text-text-primary">Budget</h2>
             <Input
-              label="Estimated total budget (₹)"
+              label="Estimated total budget (USD)"
               type="number"
               value={budget}
               onChange={(e) => setBudget(e.target.value)}

@@ -1,17 +1,27 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Building2 } from "lucide-react";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { FilterToolbar } from "@/components/layout/FilterToolbar";
 import { CityCard } from "./CityCard";
+import { getSavedCities } from "@/lib/api/cities";
 import type { City } from "@/types";
 
 export function CitiesExplorer({ cities }: { cities: City[] }) {
+  // Fetched here rather than in the page: /cities is a server component and the
+  // session cookie only travels with requests the browser makes.
+  const [savedIds, setSavedIds] = useState<Set<string>>(new Set());
   const [query, setQuery] = useState("");
   const [region, setRegion] = useState("all");
   const [cost, setCost] = useState("all");
   const [sort, setSort] = useState("popularity");
+
+  useEffect(() => {
+    getSavedCities()
+      .then((rows) => setSavedIds(new Set(rows.map((c) => c.id))))
+      .catch(() => setSavedIds(new Set()));
+  }, []);
 
   const regions = useMemo(
     () => ["all", ...Array.from(new Set(cities.map((c) => c.region)))],
@@ -53,7 +63,19 @@ export function CitiesExplorer({ cities }: { cities: City[] }) {
       ) : (
         <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4">
           {filtered.map((city) => (
-            <CityCard key={city.id} city={city} />
+            <CityCard
+              key={city.id}
+              city={city}
+              saved={savedIds.has(city.id)}
+              onToggled={(id, nowSaved) =>
+                setSavedIds((prev) => {
+                  const next = new Set(prev);
+                  if (nowSaved) next.add(id);
+                  else next.delete(id);
+                  return next;
+                })
+              }
+            />
           ))}
         </div>
       )}

@@ -178,6 +178,28 @@ class TripRead(TripListItem):
     stops: list[TripStopRead] = []
 
 
+# --- sharing ------------------------------------------------------------------
+
+
+class ShareState(BaseModel):
+    """What the owner needs to render a share control: the flag and the slug. The
+    full URL is the frontend's business - it knows its own origin."""
+
+    is_public: bool
+    share_slug: str | None
+
+
+class PublicTripRead(TripRead):
+    """The public payload. Inherits the itinerary and deliberately adds only the
+    owner's *display name* - no email, phone, city or user id anywhere in here.
+
+    `TripRead` carries no user_id, so there is nothing to strip.
+    """
+
+    owner_name: str
+    copy_count: int
+
+
 # --- reordering ---------------------------------------------------------------
 
 

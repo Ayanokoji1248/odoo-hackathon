@@ -186,8 +186,32 @@ body {
   animation: shimmer 1.5s infinite;
 }
 
-/* Focus ring consistency */
+/* ---- Focus ----
+   Navy, not crimson. `--color-primary` and `--color-error` are a few hex digits
+   apart, so a crimson focus ring made every focused field look like a validation
+   failure. Red is reserved for things that are actually wrong. */
 :focus-visible {
-  outline: 2px solid var(--color-primary);
+  outline: 2px solid var(--color-secondary);
   outline-offset: 2px;
+}
+
+/* Text fields draw their own ring (see ui/Input); the global outline on top of it
+   produced a double halo. Buttons keep the outline - they have no ring of their
+   own, and a button with no visible focus is unusable by keyboard. */
+:where(input, textarea, select):focus-visible {
+  outline: none;
+}
+
+/* ---- Motion ---- */
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

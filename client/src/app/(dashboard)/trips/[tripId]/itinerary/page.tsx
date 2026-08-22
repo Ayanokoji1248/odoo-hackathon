@@ -1,25 +1,35 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { TripHeader } from "@/components/trips/TripHeader";
-import { SectionItineraryBuilder } from "@/components/itinerary/SectionItineraryBuilder";
+import { ItineraryBuilder } from "@/components/itinerary/ItineraryBuilder";
 import { Card } from "@/components/ui/Card";
-import { getTrip } from "@/lib/api/trips";
-import type { Trip } from "@/types";
+import { getTripTree, toTrip, type ApiTrip } from "@/lib/api/trips";
 
 export default function ItineraryPage() {
   const { tripId } = useParams<{ tripId: string }>();
-  const [trip, setTrip] = useState<Trip | null | undefined>(undefined);
+  // The raw tree, not the mapped Trip: the builder needs each stop's id,
+  // order_index and activities, and toTrip() drops all three.
+  const [tree, setTree] = useState<ApiTrip | null | undefined>(undefined);
+
+  // Returns the promise so callers can await the refetch before re-enabling
+  // their buttons. `.then` rather than `async`/`await`: setState must not run
+  // synchronously inside the effect below.
+  const load = useCallback(
+    () =>
+      getTripTree(tripId)
+        .then((t) => setTree(t ?? null))
+        .catch(() => setTree(null)),
+    [tripId]
+  );
 
   useEffect(() => {
-    getTrip(tripId)
-      .then((t) => setTrip(t ?? null))
-      .catch(() => setTrip(null));
-  }, [tripId]);
+    load();
+  }, [load]);
 
-  if (trip === undefined) return <div className="h-64 animate-pulse rounded-3xl bg-black/5" />;
-  if (trip === null) {
+  if (tree === undefined) return <div className="h-64 animate-pulse rounded-3xl bg-black/5" />;
+  if (tree === null) {
     return (
       <Card>
         <p className="text-text-secondary">That trip could not be found.</p>
@@ -27,11 +37,13 @@ export default function ItineraryPage() {
     );
   }
 
+  const trip = toTrip(tree);
+
   return (
     <div>
-      <TripHeader trip={trip} />
+      <TripHeader trip={trip} onChanged={load} />
       <div className="mt-6">
-        <SectionItineraryBuilder trip={trip} />
+        <ItineraryBuilder trip={trip} stops={tree.stops ?? []} onChanged={load} />
       </div>
     </div>
   );

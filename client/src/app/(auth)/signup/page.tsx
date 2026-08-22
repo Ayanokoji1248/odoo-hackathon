@@ -3,7 +3,7 @@ import { SignupForm } from "@/components/auth/SignupForm";
 
 export default function SignupPage() {
   return (
-    <AuthShell wide>
+    <AuthShell>
       <SignupForm />
     </AuthShell>
   );

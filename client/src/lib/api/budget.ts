@@ -2,7 +2,7 @@ import type { Budget, BudgetCategory, BudgetLine } from "@/types";
 import { apiFetch } from "./client";
 
 /** Wire shape of `GET /api/v1/trips/{id}/budget`. */
-interface ApiBudget {
+export interface ApiBudget {
   currency: string;
   travelers: number;
   days: number;
@@ -19,22 +19,41 @@ interface ApiBudget {
   unassigned_total: string;
 }
 
-/** The API's five budget buckets; the UI has always used its own labels. */
-const CATEGORY_LABELS: Record<string, BudgetCategory> = {
-  TRANSPORT: "Transport",
-  ACCOMMODATION: "Accommodation",
-  ACTIVITIES: "Activities",
-  MEALS: "Food",
-  MISC: "Other",
-};
+/**
+ * The API's five budget buckets, paired with the labels the UI has always used.
+ * One list, because both the read mapping and the write form need it and two
+ * copies would drift.
+ */
+export const BUDGET_CATEGORIES = [
+  { value: "TRANSPORT", label: "Transport" },
+  { value: "ACCOMMODATION", label: "Accommodation" },
+  { value: "MEALS", label: "Food" },
+  { value: "ACTIVITIES", label: "Activities" },
+  { value: "MISC", label: "Other" },
+] as const;
+
+export type BudgetItemCategory = (typeof BUDGET_CATEGORIES)[number]["value"];
+
+const CATEGORY_LABELS = Object.fromEntries(
+  BUDGET_CATEGORIES.map((c) => [c.value, c.label])
+) as Record<string, BudgetCategory>;
+
+/** e.g. "MEALS" -> "Food". Unknown values fall back rather than render raw enum. */
+export function budgetCategoryLabel(value: string): BudgetCategory {
+  return CATEGORY_LABELS[value] ?? "Other";
+}
 
 function titleCase(value: string): string {
   return value.charAt(0) + value.slice(1).toLowerCase();
 }
 
 export async function getBudget(tripId: string): Promise<Budget> {
-  const b = await apiFetch<ApiBudget>(`/api/v1/trips/${tripId}/budget`);
+  return toBudget(tripId, await apiFetch<ApiBudget>(`/api/v1/trips/${tripId}/budget`));
+}
 
+/** Exported because the public share view reads the same summary from
+ *  `/public/trips/{slug}/budget` and must map it identically. */
+export function toBudget(tripId: string, b: ApiBudget): Budget {
   const lines: BudgetLine[] = b.by_category.map((row) => ({
     category: CATEGORY_LABELS[row.category] ?? "Other",
     // There is no planned-vs-actual split in the data: these are estimates, and
@@ -89,25 +108,48 @@ export async function getBudgetItems(tripId: string): Promise<ApiBudgetItem[]> {
   return apiFetch<ApiBudgetItem[]>(`/api/v1/trips/${tripId}/budget-items`);
 }
 
+export interface BudgetItemInput {
+  category: BudgetItemCategory;
+  label: string;
+  amount: number;
+  /** Omitted counts in the total but cannot sit on the per-day chart. */
+  incurredOn?: string;
+  /** Omitted counts in the total but cannot be attributed to a city. */
+  tripStopId?: string;
+}
+
+/** `null` clears a column; `undefined` leaves it alone. Both are meaningful here,
+ *  because "no date" and "unchanged" are different requests. */
+function itemBody(input: Partial<BudgetItemInput>): Record<string, unknown> {
+  const body: Record<string, unknown> = {};
+  if (input.category !== undefined) body.category = input.category;
+  if (input.label !== undefined) body.label = input.label;
+  if (input.amount !== undefined) body.amount = input.amount.toFixed(2);
+  if (input.incurredOn !== undefined) body.incurred_on = input.incurredOn || null;
+  if (input.tripStopId !== undefined) body.trip_stop_id = input.tripStopId || null;
+  return body;
+}
+
 export async function addBudgetItem(
   tripId: string,
-  input: {
-    category: keyof typeof CATEGORY_LABELS;
-    label: string;
-    amount: number;
-    incurredOn?: string;
-    tripStopId?: string;
-  }
+  input: BudgetItemInput
 ): Promise<ApiBudgetItem> {
   return apiFetch<ApiBudgetItem>(`/api/v1/trips/${tripId}/budget-items`, {
     method: "POST",
-    body: JSON.stringify({
-      category: input.category,
-      label: input.label,
-      amount: input.amount.toFixed(2),
-      ...(input.incurredOn ? { incurred_on: input.incurredOn } : {}),
-      ...(input.tripStopId ? { trip_stop_id: input.tripStopId } : {}),
-    }),
+    body: JSON.stringify(itemBody(input)),
+  });
+}
+
+/** Amounts get corrected far more often than they get re-entered - a flight
+ *  estimate becomes a real price - so this one is worth wiring. */
+export async function updateBudgetItem(
+  tripId: string,
+  itemId: string,
+  input: Partial<BudgetItemInput>
+): Promise<ApiBudgetItem> {
+  return apiFetch<ApiBudgetItem>(`/api/v1/trips/${tripId}/budget-items/${itemId}`, {
+    method: "PATCH",
+    body: JSON.stringify(itemBody(input)),
   });
 }
 

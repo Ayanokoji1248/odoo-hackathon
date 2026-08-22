@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { TripHeader } from "@/components/trips/TripHeader";
 import { CalendarView } from "@/components/calendar/CalendarView";
@@ -15,11 +15,15 @@ export default function CalendarPage() {
     undefined
   );
 
-  useEffect(() => {
+  const load = useCallback(() => {
     Promise.all([getTrip(tripId), getItinerary(tripId)])
       .then(([trip, itinerary]) => setState(trip ? { trip, itinerary } : null))
       .catch(() => setState(null));
   }, [tripId]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
 
   if (state === undefined) return <div className="h-64 animate-pulse rounded-3xl bg-black/5" />;
   if (state === null) {
@@ -32,7 +36,7 @@ export default function CalendarPage() {
 
   return (
     <div>
-      <TripHeader trip={state.trip} />
+      <TripHeader trip={state.trip} onChanged={load} />
       <div className="mt-6">
         <CalendarView itinerary={state.itinerary} />
       </div>

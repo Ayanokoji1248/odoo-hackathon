@@ -6,12 +6,12 @@ interface PriceTagProps {
   unit?: string;
   /** Show a pseudo discount % + strikeout (catalog items only). */
   discount?: boolean;
-  /** ISO-4217. Catalog data from the API is USD; mock rows are INR. */
+  /** ISO-4217. Catalog data from the API is USD. */
   currency?: string;
 }
 
 /** Tour-card style price: optional "% OFF" badge + strikeout, then a big bold price. */
-export function PriceTag({ price, seed = "", unit, discount = false, currency = "INR" }: PriceTagProps) {
+export function PriceTag({ price, seed = "", unit, discount = false, currency = "USD" }: PriceTagProps) {
   if (price <= 0) {
     return <p className="text-xl font-extrabold leading-none text-success">Free</p>;
   }

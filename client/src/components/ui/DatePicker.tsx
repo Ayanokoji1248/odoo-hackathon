@@ -30,7 +30,7 @@ export const DatePicker = forwardRef<HTMLInputElement, DatePickerProps>(
             id={inputId}
             type="date"
             className={cn(
-              "h-11 w-full rounded-xl border border-border bg-surface pl-10 pr-3 text-sm text-text-primary transition-colors focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20",
+              "h-11 w-full rounded-xl border border-border bg-surface pl-10 pr-3 text-sm text-text-primary transition-colors focus:border-secondary focus:outline-none focus:ring-2 focus:ring-secondary/20",
               error && "border-error",
               className
             )}

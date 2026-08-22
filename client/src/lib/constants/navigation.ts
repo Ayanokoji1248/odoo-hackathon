@@ -5,6 +5,7 @@ import {
   Users,
   CalendarDays,
   Building2,
+  Bookmark,
   Ticket,
   User,
   type LucideIcon,
@@ -34,6 +35,7 @@ export const topNav: NavItem[] = [
     children: [
       { label: "Cities", href: "/cities", icon: Building2, description: "Browse destinations" },
       { label: "Activities", href: "/activities", icon: Ticket, description: "Things to do" },
+      { label: "Saved", href: "/saved", icon: Bookmark, description: "Your bookmarks" },
     ],
   },
   { label: "Community", href: "/community", icon: Users },

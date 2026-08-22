@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Bookmark } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { CityCard } from "@/components/cities/CityCard";
@@ -17,14 +17,20 @@ export default function SavedPage() {
   const [saved, setSaved] = useState<City[] | null>(null);
   const [signedOut, setSignedOut] = useState(false);
 
+  const load = useCallback(
+    () =>
+      getSavedCities()
+        .then(setSaved)
+        .catch((error) => {
+          if (error instanceof ApiError && error.status === 401) setSignedOut(true);
+          setSaved([]);
+        }),
+    []
+  );
+
   useEffect(() => {
-    getSavedCities()
-      .then(setSaved)
-      .catch((error) => {
-        if (error instanceof ApiError && error.status === 401) setSignedOut(true);
-        setSaved([]);
-      });
-  }, []);
+    load();
+  }, [load]);
 
   return (
     <div>
@@ -46,12 +52,13 @@ export default function SavedPage() {
         <EmptyState
           icon={Bookmark}
           title="Nothing saved yet"
-          description="Tap the bookmark on any city to save it here."
+          description="Hit Save on any city in Explore and it lands here."
         />
       ) : (
         <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4">
           {saved.map((city) => (
-            <CityCard key={city.id} city={city} />
+            // Every card here is saved by definition; un-saving drops it.
+            <CityCard key={city.id} city={city} saved onToggled={load} />
           ))}
         </div>
       )}
