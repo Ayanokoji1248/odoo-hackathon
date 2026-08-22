@@ -50,19 +50,24 @@ export function SettingsPanel() {
   return (
     <div className="grid gap-6 lg:grid-cols-[220px_1fr]">
       {/* Side nav */}
-      <nav className="flex gap-2 overflow-x-auto lg:flex-col lg:overflow-visible">
-        {SECTIONS.map((s) => (
-          <button
-            key={s.key}
-            onClick={() => setSection(s.key)}
-            className={cn(
-              "flex items-center gap-2.5 whitespace-nowrap rounded-xl px-3 py-2.5 text-sm font-medium transition-colors",
-              section === s.key ? "bg-primary-light text-primary-hover" : "text-text-secondary hover:bg-surface-muted"
-            )}
-          >
-            <s.icon className="h-4 w-4" /> {s.label}
-          </button>
-        ))}
+      <nav className="flex gap-1 overflow-x-auto rounded-2xl border border-border bg-surface p-2 shadow-card lg:sticky lg:top-24 lg:h-fit lg:flex-col lg:overflow-visible">
+        {SECTIONS.map((s) => {
+          const active = section === s.key;
+          return (
+            <button
+              key={s.key}
+              onClick={() => setSection(s.key)}
+              className={cn(
+                "flex items-center gap-2.5 whitespace-nowrap rounded-xl px-3 py-2.5 text-sm font-medium transition-colors lg:w-full",
+                active
+                  ? "bg-primary-light text-primary-hover"
+                  : "text-text-secondary hover:bg-surface-muted hover:text-text-primary"
+              )}
+            >
+              <s.icon className="h-4 w-4 shrink-0" /> {s.label}
+            </button>
+          );
+        })}
       </nav>
 
       <div>

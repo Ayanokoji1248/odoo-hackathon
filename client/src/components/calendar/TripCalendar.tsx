@@ -26,6 +26,7 @@ export function TripCalendar({ trips }: { trips: Trip[] }) {
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("all");
   const [sort, setSort] = useState("date");
+  const todayIso = iso(initial.getFullYear(), initial.getMonth(), initial.getDate());
 
   const colorByTrip = useMemo(() => {
     const map: Record<string, string> = {};
@@ -43,10 +44,12 @@ export function TripCalendar({ trips }: { trips: Trip[] }) {
 
   const firstDay = new Date(year, month, 1).getDay();
   const daysInMonth = new Date(year, month + 1, 0).getDate();
-  const cells: (number | null)[] = [
-    ...Array.from({ length: firstDay }, () => null),
-    ...Array.from({ length: daysInMonth }, (_, i) => i + 1),
-  ];
+  const total = firstDay + daysInMonth;
+  const rows = Math.ceil(total / 7);
+  const cells: (number | null)[] = Array.from({ length: rows * 7 }, (_, i) => {
+    const day = i - firstDay + 1;
+    return day >= 1 && day <= daysInMonth ? day : null;
+  });
 
   const tripsOnDay = (day: number) => {
     const date = iso(year, month, day);
@@ -62,6 +65,11 @@ export function TripCalendar({ trips }: { trips: Trip[] }) {
     setYear(y);
   };
 
+  const goToday = () => {
+    setYear(initial.getFullYear());
+    setMonth(initial.getMonth());
+  };
+
   return (
     <div>
       <FilterToolbar
@@ -74,12 +82,16 @@ export function TripCalendar({ trips }: { trips: Trip[] }) {
         sortBy={{ value: sort, options: [{ label: "Date", value: "date" }, { label: "Name", value: "name" }], onChange: setSort }}
       />
 
-      <div className="grid gap-6 lg:grid-cols-[1fr_280px]">
-        {/* Calendar grid */}
-        <div className="rounded-2xl border border-border bg-surface p-4">
-          <div className="mb-4 flex items-center justify-between">
-            <h2 className="text-h3 text-text-primary">{MONTHS[month]} {year}</h2>
-            <div className="flex gap-1">
+      <div className="grid gap-6 lg:grid-cols-[1fr_300px]">
+        {/* Calendar */}
+        <div className="overflow-hidden rounded-2xl border border-border bg-surface shadow-card">
+          {/* Header */}
+          <div className="flex items-center justify-between border-b border-border p-4">
+            <h2 className="text-h3 text-text-primary">
+              {MONTHS[month]} <span className="text-text-muted">{year}</span>
+            </h2>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" onClick={goToday}>Today</Button>
               <Button variant="outline" size="icon" onClick={() => shift(-1)} aria-label="Previous month">
                 <ChevronLeft className="h-4 w-4" />
               </Button>
@@ -89,48 +101,72 @@ export function TripCalendar({ trips }: { trips: Trip[] }) {
             </div>
           </div>
 
-          <div className="grid grid-cols-7 gap-1">
+          {/* Weekday row */}
+          <div className="grid grid-cols-7 border-b border-border bg-surface-muted/60">
             {WEEKDAYS.map((d) => (
-              <div key={d} className="pb-2 text-center text-caption font-semibold uppercase text-text-muted">
+              <div key={d} className="py-2.5 text-center text-caption font-semibold uppercase tracking-wider text-text-muted">
                 {d}
               </div>
             ))}
-            {cells.map((day, i) => (
-              <div
-                key={i}
-                className={cn(
-                  "min-h-20 rounded-lg border p-1.5",
-                  day ? "border-border" : "border-transparent bg-transparent"
-                )}
-              >
-                {day && (
-                  <>
-                    <span className="text-caption font-medium text-text-secondary">{day}</span>
-                    <div className="mt-1 space-y-1">
-                      {tripsOnDay(day).slice(0, 3).map((t) => (
-                        <Link
-                          key={t.id}
-                          href={`/trips/${t.id}`}
-                          className={cn("block truncate rounded px-1.5 py-0.5 text-caption font-medium text-white", colorByTrip[t.id])}
-                          title={t.name}
+          </div>
+
+          {/* Day grid */}
+          <div className="grid grid-cols-7">
+            {cells.map((day, i) => {
+              const isToday = day !== null && iso(year, month, day) === todayIso;
+              const dayTrips = day ? tripsOnDay(day) : [];
+              return (
+                <div
+                  key={i}
+                  className={cn(
+                    "min-h-[110px] border-b border-r border-border p-1.5 [&:nth-child(7n)]:border-r-0",
+                    !day && "bg-surface-muted/30",
+                    i >= cells.length - 7 && "border-b-0"
+                  )}
+                >
+                  {day && (
+                    <>
+                      <div className="mb-1 flex justify-end">
+                        <span
+                          className={cn(
+                            "flex h-6 w-6 items-center justify-center rounded-full text-xs font-semibold",
+                            isToday ? "bg-primary text-white" : "text-text-secondary"
+                          )}
                         >
-                          {t.name}
-                        </Link>
-                      ))}
-                    </div>
-                  </>
-                )}
-              </div>
-            ))}
+                          {day}
+                        </span>
+                      </div>
+                      <div className="space-y-1">
+                        {dayTrips.slice(0, 3).map((t) => (
+                          <Link
+                            key={t.id}
+                            href={`/trips/${t.id}`}
+                            className={cn("block truncate rounded px-1.5 py-0.5 text-[11px] font-medium text-white", colorByTrip[t.id])}
+                            title={t.name}
+                          >
+                            {t.name}
+                          </Link>
+                        ))}
+                        {dayTrips.length > 3 && (
+                          <p className="px-1 text-[11px] font-medium text-text-muted">
+                            +{dayTrips.length - 3} more
+                          </p>
+                        )}
+                      </div>
+                    </>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
 
-        {/* Legend / trip list */}
+        {/* Trip list */}
         <aside>
           <h3 className="mb-3 text-h4 text-text-primary">Your Trips</h3>
           <div className="space-y-2">
             {visibleTrips.map((t) => (
-              <Link key={t.id} href={`/trips/${t.id}`} className="flex items-start gap-3 rounded-xl border border-border bg-surface p-3 hover:bg-surface-muted">
+              <Link key={t.id} href={`/trips/${t.id}`} className="flex items-start gap-3 rounded-xl border border-border bg-surface p-3 transition-colors hover:bg-surface-muted">
                 <span className={cn("mt-1 h-3 w-3 shrink-0 rounded-full", colorByTrip[t.id])} />
                 <div className="min-w-0">
                   <p className="truncate font-medium text-text-primary">{t.name}</p>

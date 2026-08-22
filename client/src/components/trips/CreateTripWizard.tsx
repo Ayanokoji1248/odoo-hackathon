@@ -52,8 +52,7 @@ export function CreateTripWizard() {
   };
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[1fr_320px] lg:items-start">
-      <div>
+    <div>
       {/* Stepper */}
       <div className="mb-8 flex items-center">
         {STEPS.map((label, i) => (
@@ -64,7 +63,7 @@ export function CreateTripWizard() {
                   "flex h-9 w-9 items-center justify-center rounded-full text-sm font-semibold transition-colors",
                   i < step && "bg-primary text-white",
                   i === step && "bg-primary text-white ring-4 ring-primary-light",
-                  i > step && "bg-surface-muted text-text-muted"
+                  i > step && "border-2 border-border bg-surface text-text-muted"
                 )}
               >
                 {i < step ? <Check className="h-4 w-4" /> : i + 1}
@@ -247,61 +246,6 @@ export function CreateTripWizard() {
           </Button>
         )}
       </div>
-      </div>
-
-      {/* Live trip summary */}
-      <aside className="lg:sticky lg:top-24 lg:self-start">
-        <div className="overflow-hidden rounded-2xl border border-border bg-surface shadow-card">
-          <div className="relative h-28">
-            {selectedCities[0] ? (
-              <Image src={selectedCities[0].imageUrl} alt="" fill sizes="320px" className="object-cover" />
-            ) : (
-              <div className="h-full w-full bg-secondary-light" />
-            )}
-            <div className="absolute inset-0 bg-linear-to-t from-slate-900/70 to-slate-900/10" />
-            <p className="absolute bottom-3 left-4 font-display text-lg font-bold text-white">
-              Trip summary
-            </p>
-          </div>
-
-          <div className="space-y-3.5 p-4">
-            <div>
-              <p className="text-caption text-text-muted">Trip name</p>
-              <p className="font-semibold text-text-primary">{name || "Untitled trip"}</p>
-            </div>
-            <div>
-              <p className="text-caption text-text-muted">Dates</p>
-              <p className="text-sm text-text-primary">
-                {startDate || "—"} <span className="text-text-muted">→</span> {endDate || "—"}
-              </p>
-            </div>
-            <div>
-              <p className="mb-1 text-caption text-text-muted">
-                Destinations ({selectedCities.length})
-              </p>
-              {selectedCities.length ? (
-                <div className="flex flex-wrap gap-1.5">
-                  {selectedCities.map((c) => (
-                    <Badge key={c.id} variant="primary">{c.name}</Badge>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-sm text-text-muted">No cities added yet</p>
-              )}
-            </div>
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-text-muted">Activities</span>
-              <span className="font-medium text-text-primary">{selectedActivities.length}</span>
-            </div>
-            <div className="flex items-center justify-between border-t border-dashed border-[#e6e6e6] pt-3">
-              <span className="text-sm text-text-muted">Estimated budget</span>
-              <span className="text-lg font-extrabold text-secondary">
-                {formatCurrency(Number(budget) || 0)}
-              </span>
-            </div>
-          </div>
-        </div>
-      </aside>
     </div>
   );
 }
