@@ -1,64 +1,59 @@
-import Image from "next/image";
+import Link from "next/link";
 import { type ReactNode } from "react";
 import { Logo } from "@/components/layout/Logo";
-import { cn } from "@/lib/utils/cn";
 
 interface AuthShellProps {
   children: ReactNode;
-  wide?: boolean;
 }
 
-export function AuthShell({ children, wide = false }: AuthShellProps) {
+/**
+ * One centred column, no photography.
+ *
+ * Signing in is a single-task screen, so it gets a single-task layout: the form is
+ * the only thing on the page, centred on the axis the eye already scans. The old
+ * split panel spent half the viewport on a stock photo that competed with the
+ * fields for attention and pushed the form off-centre - and it cost two 1200px+
+ * image downloads before anyone could type.
+ *
+ * The depth here is CSS only, built from the design tokens: two soft brand-tinted
+ * washes and a faint dot grid that fades out downward. Nothing to load, nothing to
+ * go stale, and it recolours automatically if the palette changes.
+ */
+export function AuthShell({ children }: AuthShellProps) {
   return (
-    <main className="relative isolate flex h-dvh items-center justify-center overflow-hidden bg-[#eef3f1] px-3 py-3 sm:px-5 sm:py-5 lg:px-8 lg:py-7">
-      <Image
-        src="https://images.unsplash.com/photo-1476514525535-07fb3b4ae5f1?auto=format&fit=crop&w=1920&q=80"
-        alt="Mountain road beside a blue lake"
-        fill
-        priority
-        className="-z-30 object-cover"
-      />
-      <div className="absolute inset-0 -z-20 bg-[linear-gradient(105deg,rgba(2,25,35,0.9)_0%,rgba(4,46,66,0.78)_46%,rgba(255,255,255,0.28)_100%)]" />
-      <div className="absolute inset-0 -z-10 bg-[radial-gradient(circle_at_18%_18%,rgba(255,255,255,0.18),transparent_30%),radial-gradient(circle_at_82%_82%,rgba(199,0,50,0.16),transparent_28%)]" />
-
+    <main className="relative isolate grid min-h-dvh place-items-center overflow-hidden bg-background px-4 py-10 sm:px-6">
+      {/* Decorative only - hidden from the accessibility tree. */}
       <div
-        className={cn(
-          "grid h-full max-h-[52rem] w-full max-w-6xl overflow-hidden rounded-[1.35rem] bg-white/96 shadow-[0_24px_80px_rgba(2,25,35,0.28)] ring-1 ring-white/55 backdrop-blur md:grid-cols-[0.86fr_1.14fr] lg:rounded-[1.75rem]",
-          wide && "max-w-7xl md:grid-cols-[0.8fr_1.2fr]"
-        )}
-      >
-        <section className="relative hidden min-h-0 flex-col justify-between overflow-hidden bg-secondary p-7 text-white md:flex lg:p-9">
-          <Image
-            src="https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=1200&q=80"
-            alt="Traveler looking across a mountain valley"
-            fill
-            sizes="(min-width: 768px) 45vw, 100vw"
-            className="object-cover opacity-72"
-          />
-          <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(4,46,66,0.34),rgba(4,46,66,0.92))]" />
-          <div className="relative">
-            <Logo href="/login" size="lg" tone="light" />
-          </div>
-          <div className="relative max-w-sm pb-1">
-            <p className="text-sm font-semibold uppercase tracking-[0.18em] text-white/70">
-              Trip planning workspace
-            </p>
-            <h2 className="mt-3 text-balance font-display text-4xl font-extrabold leading-[1.05] text-white">
-              Your next route is waiting.
-            </h2>
-            <p className="mt-3 text-pretty text-base leading-7 text-white/78">
-              Sign in to organize itineraries, saved cities, shared plans, and trip budgets from one calm place.
-            </p>
-          </div>
-        </section>
-        <section className="flex min-h-0 items-center justify-center px-5 py-5 sm:px-8 lg:px-11">
-          <div className={cn("w-full", wide ? "max-w-3xl" : "max-w-[27rem]")}>
-            <div className="mb-5 flex justify-center md:hidden">
-              <Logo href="/login" size="lg" />
-            </div>
-            {children}
-          </div>
-        </section>
+        aria-hidden
+        className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-[34rem] bg-[radial-gradient(46rem_26rem_at_50%_-4rem,var(--color-secondary-light),transparent_72%)]"
+      />
+      <div
+        aria-hidden
+        className="pointer-events-none absolute -z-10 right-[-8rem] bottom-[-10rem] h-[30rem] w-[30rem] rounded-full bg-[radial-gradient(circle,var(--color-primary-light),transparent_68%)]"
+      />
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-[30rem] bg-[radial-gradient(var(--color-border)_1px,transparent_1px)] [background-size:20px_20px] [mask-image:radial-gradient(32rem_20rem_at_50%_2rem,black,transparent)]"
+      />
+
+      {/* One width for every auth screen: login and sign-up sit at the same
+          optical centre, so moving between them does not resize the card. */}
+      <div className="mx-auto flex w-full max-w-md flex-col items-center">
+        <Logo href="/" size="lg" className="mb-6" />
+
+        <div className="motion-safe:animate-fade-in w-full rounded-3xl border border-border bg-surface p-6 shadow-[0_1px_2px_rgba(4,46,66,0.04),0_12px_32px_-8px_rgba(4,46,66,0.12)] sm:p-8">
+          {children}
+        </div>
+
+        <p className="mt-6 max-w-sm text-balance text-center text-caption text-text-muted">
+          Plan trips, price them honestly, and share the ones worth sharing.
+        </p>
+        <Link
+          href="/"
+          className="mt-2 rounded-md px-2 py-1 text-caption font-medium text-text-muted transition-colors hover:text-text-primary"
+        >
+          Back to home
+        </Link>
       </div>
     </main>
   );

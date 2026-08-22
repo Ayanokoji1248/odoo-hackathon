@@ -164,6 +164,31 @@ export async function createTrip(input: CreateTripInput): Promise<Trip> {
   return toTrip(trip);
 }
 
+/**
+ * PATCH sends only the keys present, so an untouched field is never overwritten.
+ * `undefined` means "leave alone"; an empty string clears the column (`null`).
+ *
+ * Shrinking the dates past an existing stop is a 409 whose `details` name every
+ * offender - surface them, don't swallow them.
+ */
+export async function updateTrip(id: string, input: Partial<CreateTripInput>): Promise<Trip> {
+  const body: Record<string, unknown> = {};
+  if (input.name !== undefined) body.name = input.name;
+  if (input.startDate !== undefined) body.start_date = input.startDate;
+  if (input.endDate !== undefined) body.end_date = input.endDate;
+  if (input.description !== undefined) body.description = input.description || null;
+  if (input.travelers !== undefined) body.travelers = input.travelers;
+  if (input.currency !== undefined) body.currency = input.currency;
+  if (input.coverPhotoUrl !== undefined) body.cover_photo_url = input.coverPhotoUrl || null;
+
+  // The response is a list-shaped trip: no `stops`. Callers that show the tree
+  // refetch rather than trusting this for detail state.
+  return toTrip(await apiFetch<ApiTrip>(`/api/v1/trips/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(body),
+  }));
+}
+
 export async function deleteTrip(id: string): Promise<void> {
   await apiFetch<{ deleted: boolean }>(`/api/v1/trips/${id}`, { method: "DELETE" });
 }
@@ -193,6 +218,29 @@ export async function addStop(
         ...(input.notes ? { notes: input.notes } : {}),
       }),
     }
+  );
+  return { stop: toStop(result.stop), warnings: result.warnings };
+}
+
+/**
+ * Dates are validated against the *trip* range server-side, and moving a stop off
+ * its activities is a 409 naming them - so callers surface `errorMessages()`.
+ * `warnings` is advisory only (overlapping stops are legal).
+ */
+export async function updateStop(
+  tripId: string,
+  stopId: string,
+  input: { cityId?: string; startDate?: string; endDate?: string; notes?: string | null }
+): Promise<{ stop: TripStop; warnings: string[] }> {
+  const body: Record<string, unknown> = {};
+  if (input.cityId !== undefined) body.city_id = input.cityId;
+  if (input.startDate !== undefined) body.start_date = input.startDate;
+  if (input.endDate !== undefined) body.end_date = input.endDate;
+  if (input.notes !== undefined) body.notes = input.notes || null;
+
+  const result = await apiFetch<{ stop: ApiTripStop; warnings: string[] }>(
+    `/api/v1/trips/${tripId}/stops/${stopId}`,
+    { method: "PATCH", body: JSON.stringify(body) }
   );
   return { stop: toStop(result.stop), warnings: result.warnings };
 }

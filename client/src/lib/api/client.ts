@@ -33,6 +33,33 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * Every message a failure has to show, flattened. The API puts the actionable
+ * part of a 409/422 in `details[]` - "Paris: 2026-09-21 to 2026-09-23" - and the
+ * top-level `message` is only the headline, so dropping details loses the fix.
+ */
+export function errorMessages(error: unknown): string[] {
+  if (!(error instanceof ApiError)) {
+    return [error instanceof Error ? error.message : "Something went wrong"];
+  }
+  return error.details?.length ? error.details.map((d) => d.message) : [error.message];
+}
+
+/**
+ * The same `details[]`, keyed by the field the API blamed - so a 400 on `email`
+ * can be shown under the email input instead of as a banner the user has to map
+ * back to a field themselves. Keys are the API's own names (`first_name`).
+ */
+export function fieldErrors(error: unknown): Record<string, string> {
+  if (!(error instanceof ApiError) || !error.details?.length) return {};
+  const byField: Record<string, string> = {};
+  for (const detail of error.details) {
+    // First message wins: two complaints about one field would only fit one line.
+    if (detail.field && !byField[detail.field]) byField[detail.field] = detail.message;
+  }
+  return byField;
+}
+
 let refreshPromise: Promise<boolean> | null = null;
 
 /**

@@ -1,30 +1,43 @@
 import { notFound } from "next/navigation";
 import { PublicTripStory } from "@/components/share/PublicTripStory";
-import { getTripByShareToken } from "@/data/mock/trips";
-import { getItineraryByTrip } from "@/data/mock/itinerary";
-import { getBudgetByTrip } from "@/data/mock/budget";
-import { mockUser } from "@/data/mock/users";
-import type { SharedTrip } from "@/types";
+import { getSharedTrip } from "@/lib/api/shares";
 
+/**
+ * The read-only public view — the only page in the app that renders someone
+ * else's trip, and the only one that works with no session at all.
+ *
+ * A server component on purpose: `/public/trips/{slug}` needs no cookie, so there
+ * is nothing to forward, and rendering on the server means a link pasted into a
+ * chat app gets real HTML instead of a loading spinner.
+ */
 export default async function SharedTripPage({
   params,
 }: {
-  params: Promise<{ shareToken: string }>;
+  params: Promise<{ slug: string }>;
 }) {
-  const { shareToken } = await params;
-  const trip = getTripByShareToken(shareToken);
-  if (!trip) notFound();
-
-  const shared: SharedTrip = {
-    shareToken,
-    trip,
-    itinerary: getItineraryByTrip(trip.id),
-    budget: getBudgetByTrip(trip.id),
-    ownerName: mockUser.name,
-    ownerAvatar: mockUser.avatarUrl,
-    views: 1284,
-    copies: 47,
-  };
+  const { slug } = await params;
+  const shared = await getSharedTrip(slug);
+  // Covers a slug that never existed and one whose owner has un-shared it. The
+  // API answers 404 to both so a prober learns nothing either way.
+  if (!shared) notFound();
 
   return <PublicTripStory shared={shared} />;
+}
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ slug: string }>;
+}) {
+  const { slug } = await params;
+  const shared = await getSharedTrip(slug).catch(() => undefined);
+  if (!shared) return { title: "Trip not found" };
+  return {
+    title: `${shared.trip.name} · GlobeTrotter`,
+    description:
+      shared.trip.description ??
+      `A ${shared.trip.durationDays}-day itinerary through ${(
+        shared.trip.cityNames ?? []
+      ).join(", ")}.`,
+  };
 }

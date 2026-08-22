@@ -2,19 +2,33 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { Calendar, MapPin, Share2, Pencil } from "lucide-react";
+import { useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { Calendar, MapPin, MoreVertical, Share2, Pencil, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
-import { useToast } from "@/components/ui/Toast";
+import { Dropdown, DropdownItem } from "@/components/ui/Dropdown";
+import { TripDeleteDialog, TripEditDialog } from "./TripEditDialog";
+import { ShareDialog } from "@/components/share/ShareDialog";
 import { tripStatusMeta } from "@/lib/constants/status";
 import { formatDateRange } from "@/lib/utils/format";
 import { cn } from "@/lib/utils/cn";
 import type { Trip } from "@/types";
 
-export function TripHeader({ trip }: { trip: Trip }) {
+export function TripHeader({
+  trip,
+  onChanged,
+}: {
+  trip: Trip;
+  /** Refetch the trip after an edit - PATCH returns no stops, so the page
+   *  cannot patch its own state from the response. */
+  onChanged?: () => void;
+}) {
   const pathname = usePathname();
-  const { toast } = useToast();
+  const router = useRouter();
+  const [editing, setEditing] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [sharing, setSharing] = useState(false);
   const status = tripStatusMeta[trip.status];
   const base = `/trips/${trip.id}`;
 
@@ -52,20 +66,36 @@ export function TripHeader({ trip }: { trip: Trip }) {
               </span>
             </div>
           </div>
-          <div className="flex gap-2">
+          <div className="flex items-center gap-2">
             <Button
               variant="outline"
               size="sm"
               className="border-white/40 bg-white/10 text-white backdrop-blur hover:bg-white/20"
-              onClick={() => toast("Share link copied to clipboard", "success")}
+              onClick={() => setSharing(true)}
             >
-              <Share2 className="h-4 w-4" /> Share
+              <Share2 className="h-4 w-4" /> {trip.isPublic ? "Sharing" : "Share"}
             </Button>
-            <Link href={`${base}/itinerary`}>
-              <Button size="sm" className="bg-white text-primary-hover hover:bg-white/90">
-                <Pencil className="h-4 w-4" /> Edit
-              </Button>
-            </Link>
+            <Button
+              size="sm"
+              className="bg-white text-primary-hover hover:bg-white/90"
+              onClick={() => setEditing(true)}
+            >
+              <Pencil className="h-4 w-4" /> Edit
+            </Button>
+            <Dropdown
+              trigger={
+                <span className="flex h-9 w-9 items-center justify-center rounded-lg border border-white/40 bg-white/10 text-white backdrop-blur hover:bg-white/20">
+                  <MoreVertical className="h-4 w-4" />
+                </span>
+              }
+            >
+              <DropdownItem onClick={() => router.push(`${base}/itinerary`)}>
+                <Pencil className="h-4 w-4" /> Edit itinerary
+              </DropdownItem>
+              <DropdownItem danger onClick={() => setDeleting(true)}>
+                <Trash2 className="h-4 w-4" /> Delete trip
+              </DropdownItem>
+            </Dropdown>
           </div>
         </div>
       </div>
@@ -90,6 +120,20 @@ export function TripHeader({ trip }: { trip: Trip }) {
           );
         })}
       </div>
+
+      {editing && (
+        <TripEditDialog trip={trip} onClose={() => setEditing(false)} onSaved={onChanged} />
+      )}
+      {deleting && (
+        <TripDeleteDialog
+          trip={trip}
+          onClose={() => setDeleting(false)}
+          onDeleted={() => router.push("/trips")}
+        />
+      )}
+      {sharing && (
+        <ShareDialog trip={trip} onClose={() => setSharing(false)} onChanged={onChanged} />
+      )}
     </div>
   );
 }

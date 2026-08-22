@@ -7,7 +7,7 @@ export interface ItineraryItem {
   category: ActivityCategory | "Transport" | "Meal" | "Rest";
   activityId?: string;
   durationHours?: number;
-  cost: number; // in INR
+  cost: number; // in the trip currency, USD by default
   notes?: string;
   location?: string;
 }

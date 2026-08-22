@@ -3,18 +3,24 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Calendar, MapPin, MoreVertical, Pencil, Share2, Trash2 } from "lucide-react";
+import { useState } from "react";
+import { Calendar, MapPin, MoreVertical, Pencil, Route, Share2, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Dropdown, DropdownItem } from "@/components/ui/Dropdown";
-import { useToast } from "@/components/ui/Toast";
+import { TripDeleteDialog, TripEditDialog } from "./TripEditDialog";
+import { ShareDialog } from "@/components/share/ShareDialog";
 import { tripStatusMeta } from "@/lib/constants/status";
 import { formatCurrency, formatDateRange, daysBetween, pluralize } from "@/lib/utils/format";
 import type { Trip } from "@/types";
 
-export function TripCard({ trip }: { trip: Trip }) {
+/** `onChanged` refetches the owning list after an edit or a delete - simpler and
+ *  less wrong than splicing the card out of a copy of the parent's state. */
+export function TripCard({ trip, onChanged }: { trip: Trip; onChanged?: () => void }) {
   const router = useRouter();
-  const { toast } = useToast();
+  const [editing, setEditing] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [sharing, setSharing] = useState(false);
   const status = tripStatusMeta[trip.status];
   // List responses carry city names only; detail responses carry full stops.
   const cities = trip.cityNames ?? trip.stops.map((s) => s.cityName);
@@ -55,13 +61,16 @@ export function TripCard({ trip }: { trip: Trip }) {
               </span>
             }
           >
+            <DropdownItem onClick={() => setEditing(true)}>
+              <Pencil className="h-4 w-4" /> Edit details
+            </DropdownItem>
             <DropdownItem onClick={() => router.push(`/trips/${trip.id}/itinerary`)}>
-              <Pencil className="h-4 w-4" /> Edit itinerary
+              <Route className="h-4 w-4" /> Edit itinerary
             </DropdownItem>
-            <DropdownItem onClick={() => toast("Share link copied to clipboard", "success")}>
-              <Share2 className="h-4 w-4" /> Share
+            <DropdownItem onClick={() => setSharing(true)}>
+              <Share2 className="h-4 w-4" /> {trip.isPublic ? "Sharing" : "Share"}
             </DropdownItem>
-            <DropdownItem danger onClick={() => toast("Trip deleted", "info")}>
+            <DropdownItem danger onClick={() => setDeleting(true)}>
               <Trash2 className="h-4 w-4" /> Delete
             </DropdownItem>
           </Dropdown>
@@ -91,6 +100,16 @@ export function TripCard({ trip }: { trip: Trip }) {
           View Trip
         </Button>
       </div>
+
+      {editing && (
+        <TripEditDialog trip={trip} onClose={() => setEditing(false)} onSaved={onChanged} />
+      )}
+      {deleting && (
+        <TripDeleteDialog trip={trip} onClose={() => setDeleting(false)} onDeleted={onChanged} />
+      )}
+      {sharing && (
+        <ShareDialog trip={trip} onClose={() => setSharing(false)} onChanged={onChanged} />
+      )}
     </div>
   );
 }

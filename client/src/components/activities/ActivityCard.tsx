@@ -1,16 +1,17 @@
 "use client";
 
 import Image from "next/image";
+import { useState } from "react";
 import { Clock, Plus, MapPin } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { PriceTag } from "@/components/ui/PriceTag";
-import { useToast } from "@/components/ui/Toast";
+import { AddToTripDialog } from "./AddToTripDialog";
 import { pluralize } from "@/lib/utils/format";
 import type { Activity } from "@/types";
 
 export function ActivityCard({ activity }: { activity: Activity }) {
-  const { toast } = useToast();
+  const [adding, setAdding] = useState(false);
   return (
     <div className="group flex flex-col overflow-hidden rounded-xl border border-[#c2c2c2]/60 bg-surface shadow-card transition-all duration-200 hover:-translate-y-1 hover:shadow-card-hover">
       {/* Image + badges */}
@@ -43,13 +44,14 @@ export function ActivityCard({ activity }: { activity: Activity }) {
           <PriceTag price={activity.cost} seed={activity.id} unit="per person" currency="USD" discount />
         </div>
 
-        <Button
-          className="mt-4 w-full"
-          onClick={() => toast(`"${activity.name}" added to itinerary`, "success")}
-        >
-          <Plus className="h-4 w-4" /> Add Activity
+        <Button className="mt-4 w-full" onClick={() => setAdding(true)}>
+          <Plus className="h-4 w-4" /> Add to Trip
         </Button>
       </div>
+
+      {adding && (
+        <AddToTripDialog activity={activity} onClose={() => setAdding(false)} />
+      )}
     </div>
   );
 }

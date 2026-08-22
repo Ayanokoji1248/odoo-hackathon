@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { CalendarDays, Building2, Compass, Wallet } from "lucide-react";
 import { TripHeader } from "@/components/trips/TripHeader";
@@ -16,11 +16,15 @@ export default function TripOverviewPage() {
   const { tripId } = useParams<{ tripId: string }>();
   const [trip, setTrip] = useState<Trip | null | undefined>(undefined);
 
-  useEffect(() => {
+  const load = useCallback(() => {
     getTrip(tripId)
       .then((t) => setTrip(t ?? null))
       .catch(() => setTrip(null));
   }, [tripId]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
 
   if (trip === undefined) return <div className="h-64 animate-pulse rounded-3xl bg-black/5" />;
   if (trip === null) {
@@ -36,7 +40,7 @@ export default function TripOverviewPage() {
 
   return (
     <div>
-      <TripHeader trip={trip} />
+      <TripHeader trip={trip} onChanged={load} />
 
       <div className="mt-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
         <StatCard label="Duration" value={pluralize(days, "Day")} icon={CalendarDays} tone="primary" />

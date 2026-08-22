@@ -34,11 +34,14 @@ function AdminShell({ children }: { children: React.ReactNode }) {
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   // /admin sits outside the (dashboard) group, so it needs its own provider.
   // The role check here is UX only: it stops a non-admin wandering in and
-  // seeing a broken page. Admin *data* has to be protected by the API — see
-  // `AdminUser` in server/app/deps.py, which no route uses yet.
+  // seeing a broken page. Admin *data* is protected by `require_admin` on the
+  // server router — every /api/v1/admin path 403s without the role.
+  //
+  // Signed out lands on /admin/login rather than /login: that screen is outside
+  // this route group precisely so it is reachable without a session.
   return (
     <AuthProvider>
-      <RequireAuth roles={["admin"]}>
+      <RequireAuth roles={["admin"]} redirectTo="/admin/login">
         <AdminShell>{children}</AdminShell>
       </RequireAuth>
     </AuthProvider>

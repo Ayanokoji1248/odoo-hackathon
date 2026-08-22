@@ -12,7 +12,14 @@ import type { Trip, TripStatus } from "@/types";
 
 const STATUS_ORDER: TripStatus[] = ["ongoing", "upcoming", "completed", "draft"];
 
-export function TripsExplorer({ trips }: { trips: Trip[] }) {
+export function TripsExplorer({
+  trips,
+  onChanged,
+}: {
+  trips: Trip[];
+  /** Called after a card edits or deletes its trip, so the list can refetch. */
+  onChanged?: () => void;
+}) {
   const [query, setQuery] = useState("");
   const [group, setGroup] = useState("status");
   const [filter, setFilter] = useState("all");
@@ -84,7 +91,7 @@ export function TripsExplorer({ trips }: { trips: Trip[] }) {
               </div>
               <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
                 {g.items.map((trip) => (
-                  <TripCard key={trip.id} trip={trip} />
+                  <TripCard key={trip.id} trip={trip} onChanged={onChanged} />
                 ))}
               </div>
             </section>

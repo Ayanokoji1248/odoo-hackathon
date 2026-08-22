@@ -20,7 +20,7 @@ from app.core.security import hash_password
 from app.db.session import SessionLocal, engine
 from app.models.catalog import Activity, ActivityCategory, City
 from app.models.trip import Trip, TripActivity, TripStop
-from app.models.user import User
+from app.models.user import User, UserRole
 
 # One currency for the whole catalog. There is no FX in v1, so seeding local
 # currencies would let the budget service sum VND and CHF as if they were the
@@ -29,6 +29,13 @@ CATALOG_CURRENCY = "USD"
 
 DEMO_EMAIL = "demo@globetrotter.app"
 DEMO_PASSWORD = "demo12345"
+
+# The admin panel is unreachable without an ADMIN row, and promoting one by hand
+# means a psql session - so the seed makes one. Same idempotent upsert as the demo
+# user; the role is re-asserted on every run in case someone demoted it while
+# testing the user-management screen.
+ADMIN_EMAIL = "admin@globetrotter.app"
+ADMIN_PASSWORD = "admin12345"
 
 # name, country, region, lat, lon, cost_index, popularity, description
 CITIES: list[tuple[str, str, str, float, float, int, int, str]] = [
@@ -321,6 +328,34 @@ DEMO_PROFILE = {
 }
 
 
+ADMIN_PROFILE = {
+    "first_name": "Platform",
+    "last_name": "Admin",
+    "city": "Bengaluru",
+    "country": "India",
+    "additional_info": "Seeded admin account.",
+}
+
+
+async def seed_admin_user(db: AsyncSession) -> User:
+    user = (
+        await db.execute(select(User).where(User.email == ADMIN_EMAIL))
+    ).scalar_one_or_none()
+    if user is None:
+        user = User(
+            email=ADMIN_EMAIL,
+            password_hash=hash_password(ADMIN_PASSWORD),
+            role=UserRole.ADMIN,
+            **ADMIN_PROFILE,
+        )
+        db.add(user)
+    else:
+        user.role = UserRole.ADMIN
+        user.is_active = True
+    await db.flush()
+    return user
+
+
 async def seed_demo_user(db: AsyncSession) -> User:
     user = (
         await db.execute(select(User).where(User.email == DEMO_EMAIL))
@@ -435,6 +470,7 @@ async def main() -> None:
         city_ids = await seed_cities(db)
         activity_count = await seed_activities(db, city_ids)
         user = await seed_demo_user(db)
+        admin = await seed_admin_user(db)
         trip_count = await seed_demo_trips(db, user, city_ids)
         await db.commit()
 
@@ -442,6 +478,7 @@ async def main() -> None:
     print(f"activities: {activity_count}")
     print(f"demo trips: {trip_count} new")
     print(f"demo user:  {user.email} / {DEMO_PASSWORD}")
+    print(f"admin user: {admin.email} / {ADMIN_PASSWORD}")
     await engine.dispose()
 
 

@@ -1,13 +1,16 @@
 "use client";
 
 import Image from "next/image";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Copy, Share2, MapPin, CalendarDays, Wallet, Clock, Eye } from "lucide-react";
+import { Copy, Share2, MapPin, CalendarDays, Wallet, Clock } from "lucide-react";
 import { Logo } from "@/components/layout/Logo";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Avatar } from "@/components/ui/Avatar";
 import { useToast } from "@/components/ui/Toast";
+import { ApiError } from "@/lib/api/client";
+import { copySharedTrip, shareUrl } from "@/lib/api/shares";
 import { getCategoryMeta } from "@/lib/constants/categories";
 import {
   formatCurrency,
@@ -23,7 +26,41 @@ export function PublicTripStory({ shared }: { shared: SharedTrip }) {
   const { toast } = useToast();
   const { trip, itinerary, budget } = shared;
   const days = daysBetween(trip.startDate, trip.endDate);
-  const totalCost = budget.lines.reduce((s, l) => s + (l.actual ?? l.planned), 0);
+  const totalCost = budget.total;
+  const [copying, setCopying] = useState(false);
+
+  /**
+   * Deep-copies into the viewer's own account. Copying needs an owner, so a 401
+   * means "sign in first" - and the login redirect carries this page's path so
+   * they land back here instead of on a dashboard, having lost the trip they
+   * wanted.
+   */
+  const copy = async () => {
+    if (copying) return;
+    setCopying(true);
+    try {
+      const mine = await copySharedTrip(shared.shareToken);
+      toast("Copied to your trips", "success");
+      router.push(`/trips/${mine.id}`);
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 401) {
+        toast("Sign in to copy this trip", "info");
+        router.push(`/login?next=${encodeURIComponent(`/shared/${shared.shareToken}`)}`);
+        return;
+      }
+      toast(error instanceof Error ? error.message : "Could not copy the trip", "error");
+      setCopying(false);
+    }
+  };
+
+  const shareThisLink = async () => {
+    try {
+      await navigator.clipboard.writeText(shareUrl(shared.shareToken));
+      toast("Link copied", "success");
+    } catch {
+      toast("Could not reach the clipboard", "error");
+    }
+  };
 
   return (
     <div className="min-h-screen bg-background">
@@ -55,7 +92,7 @@ export function PublicTripStory({ shared }: { shared: SharedTrip }) {
       <div className="mx-auto mt-6 max-w-5xl px-5 lg:px-0">
         <div className="flex flex-col gap-4 rounded-2xl border border-border bg-surface p-5 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">
-            <Avatar name={shared.ownerName} src={shared.ownerAvatar} />
+            <Avatar name={shared.ownerName} />
             <div>
               <p className="text-sm text-text-muted">Curated by</p>
               <p className="font-semibold text-text-primary">{shared.ownerName}</p>
@@ -64,18 +101,20 @@ export function PublicTripStory({ shared }: { shared: SharedTrip }) {
           <div className="flex flex-wrap gap-5 text-sm">
             <span className="flex items-center gap-1.5 text-text-secondary"><CalendarDays className="h-4 w-4 text-primary" />{formatDateRange(trip.startDate, trip.endDate)}</span>
             <span className="flex items-center gap-1.5 text-text-secondary"><Clock className="h-4 w-4 text-primary" />{pluralize(days, "Day")}</span>
-            <span className="flex items-center gap-1.5 text-text-secondary"><Wallet className="h-4 w-4 text-primary" />{formatCurrency(totalCost)}</span>
-            <span className="flex items-center gap-1.5 text-text-muted"><Eye className="h-4 w-4" />{shared.views.toLocaleString()} views</span>
+            <span className="flex items-center gap-1.5 text-text-secondary"><Wallet className="h-4 w-4 text-primary" />{formatCurrency(totalCost, budget.currency)}</span>
+            {/* Real, and free: counted from copied_from_trip_id. There is no view
+                counter column, so there is no view count here. */}
+            <span className="flex items-center gap-1.5 text-text-muted"><Copy className="h-4 w-4" />{pluralize(shared.copies, "copy", "copies")}</span>
           </div>
         </div>
       </div>
 
       {/* Actions */}
       <div className="mx-auto mt-6 flex max-w-5xl gap-3 px-5 lg:px-0">
-        <Button className="flex-1 sm:flex-none" onClick={() => toast("Trip copied to your account! 🎉", "success")}>
-          <Copy className="h-4 w-4" /> Copy This Trip
+        <Button className="flex-1 sm:flex-none" loading={copying} onClick={copy}>
+          <Copy className="h-4 w-4" /> Copy this trip
         </Button>
-        <Button variant="outline" onClick={() => toast("Share link copied", "success")}>
+        <Button variant="outline" onClick={shareThisLink}>
           <Share2 className="h-4 w-4" /> Share
         </Button>
       </div>
@@ -134,7 +173,7 @@ export function PublicTripStory({ shared }: { shared: SharedTrip }) {
                                 {item.notes && <p className="text-caption text-text-secondary">{item.notes}</p>}
                               </div>
                               <span className="whitespace-nowrap text-sm text-text-muted">
-                                {item.cost === 0 ? "Free" : formatCurrency(item.cost)}
+                                {item.cost === 0 ? "Free" : formatCurrency(item.cost, budget.currency)}
                               </span>
                             </li>
                           );
@@ -151,8 +190,12 @@ export function PublicTripStory({ shared }: { shared: SharedTrip }) {
         <div className="rounded-3xl bg-primary p-8 text-center text-white">
           <h3 className="text-h2">Love this itinerary?</h3>
           <p className="mt-1 text-white/85">Copy it to your account and make it your own.</p>
-          <Button className="mt-4 bg-white text-primary-hover hover:bg-white/90" onClick={() => toast("Trip copied to your account! 🎉", "success")}>
-            <Copy className="h-4 w-4" /> Copy This Trip
+          <Button
+            className="mt-4 bg-white text-primary-hover hover:bg-white/90"
+            loading={copying}
+            onClick={copy}
+          >
+            <Copy className="h-4 w-4" /> Copy this trip
           </Button>
         </div>
       </div>

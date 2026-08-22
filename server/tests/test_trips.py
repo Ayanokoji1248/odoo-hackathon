@@ -442,6 +442,30 @@ async def test_an_activity_needs_either_an_id_or_a_name(client, trip, stops):
     assert r.status_code == 400
 
 
+async def test_a_catalog_activity_from_another_city_is_rejected(client, trip, stops, catalog):
+    """stops[0] is Paris; the castle tour is Prague. Allowing it would file the
+    cost under Paris in the per-city budget rollup."""
+    r = await client.post(
+        f"{TRIPS}/{trip['id']}/stops/{stops[0]['id']}/activities",
+        json={
+            "activity_id": str(catalog["activities"]["castle"]),
+            "scheduled_date": stops[0]["start_date"],
+        },
+    )
+    assert r.status_code == 400, r.text
+    assert "not in Paris" in r.json()["error"]["message"]
+
+
+async def test_a_custom_activity_needs_no_city(client, trip, stops):
+    """A name-only activity has no catalog row, so the city check cannot apply."""
+    r = await client.post(
+        f"{TRIPS}/{trip['id']}/stops/{stops[0]['id']}/activities",
+        json={"name": "Dinner with Amelie", "scheduled_date": stops[0]["start_date"]},
+    )
+    assert r.status_code == 201, r.text
+    assert r.json()["data"]["name"] == "Dinner with Amelie"
+
+
 async def test_a_supplied_cost_overrides_the_catalog_price(client, trip, stops, catalog):
     r = await client.post(
         f"{TRIPS}/{trip['id']}/stops/{stops[0]['id']}/activities",

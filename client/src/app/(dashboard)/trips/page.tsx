@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { Plus } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
@@ -18,11 +18,15 @@ import type { Trip } from "@/types";
 export default function TripsPage() {
   const [trips, setTrips] = useState<Trip[] | null>(null);
 
-  useEffect(() => {
+  const load = useCallback(() => {
     getTrips()
       .then(setTrips)
       .catch(() => setTrips([]));
   }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
 
   return (
     <div>
@@ -44,7 +48,7 @@ export default function TripsPage() {
           ))}
         </div>
       ) : (
-        <TripsExplorer trips={trips} />
+        <TripsExplorer trips={trips} onChanged={load} />
       )}
     </div>
   );

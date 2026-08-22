@@ -4,7 +4,6 @@ import Link from "next/link";
 import { MapPin, Mail, Phone, Calendar, Pencil } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/Card";
-import { Badge } from "@/components/ui/Badge";
 import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
 import { SectionHeading } from "@/components/layout/SectionHeading";
@@ -46,11 +45,6 @@ export default function ProfilePage() {
             <span className="flex items-center gap-1.5"><Calendar className="h-4 w-4" />Joined {formatDate(user.memberSince, { month: "long", year: "numeric" })}</span>
           </div>
           {user.bio && <p className="mt-3 max-w-2xl text-text-secondary">{user.bio}</p>}
-          <div className="mt-3 flex flex-wrap gap-2">
-            {user.preferences.travelStyle.map((s) => (
-              <Badge key={s} variant="primary">{s}</Badge>
-            ))}
-          </div>
         </div>
         <Link href="/settings">
           <Button variant="outline"><Pencil className="h-4 w-4" /> Edit Profile</Button>

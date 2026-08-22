@@ -1,3 +1,4 @@
+import secrets
 import uuid
 from collections.abc import Sequence
 from datetime import date
@@ -237,6 +238,10 @@ async def duplicate_trip(
     db.add(copy)
     await db.flush()
 
+    # Old stop id -> new stop id, so a budget item attributed to a city keeps
+    # pointing at the right one in the copy.
+    stop_map: dict[uuid.UUID, uuid.UUID] = {}
+
     for stop in tree.stops:
         new_stop = TripStop(
             trip_id=copy.id,
@@ -248,6 +253,7 @@ async def duplicate_trip(
         )
         db.add(new_stop)
         await db.flush()
+        stop_map[stop.id] = new_stop.id
         for item in stop.activities:
             db.add(
                 TripActivity(
@@ -264,8 +270,96 @@ async def duplicate_trip(
                 )
             )
 
+    # Budget items travel with the copy. Without this, copying a trip loses its
+    # flights and hotels and the copy's total silently drops to activities only.
+    source_items = (
+        await db.execute(select(BudgetItem).where(BudgetItem.trip_id == tree.id))
+    ).scalars().all()
+    for item in source_items:
+        db.add(
+            BudgetItem(
+                trip_id=copy.id,
+                trip_stop_id=stop_map.get(item.trip_stop_id) if item.trip_stop_id else None,
+                category=item.category,
+                label=item.label,
+                amount=item.amount,
+                # An undated item stays undated; a dated one shifts with everything else.
+                incurred_on=item.incurred_on + offset if item.incurred_on else None,
+            )
+        )
+
     await db.commit()
     return await get_trip_tree(db, copy.id)
+
+
+# --- sharing ------------------------------------------------------------------
+
+
+# 10 url-safe bytes ~ 13 characters, ~80 bits. Not guessable by brute force, and
+# short enough to paste into a message without wrapping.
+SHARE_SLUG_BYTES = 10
+
+
+async def share_trip(db: AsyncSession, trip: Trip) -> Trip:
+    """Idempotent: an already-shared trip keeps the slug it has.
+
+    Regenerating would silently break every link already sent to somebody.
+    """
+    if trip.share_slug is None:
+        trip.share_slug = secrets.token_urlsafe(SHARE_SLUG_BYTES)
+    trip.is_public = True
+    await db.commit()
+    await db.refresh(trip)
+    return trip
+
+
+async def unshare_trip(db: AsyncSession, trip: Trip) -> Trip:
+    """Clears the slug as well as the flag.
+
+    Keeping it would mean re-sharing later revives the old link, handing access
+    back to anyone who ever saw it. Un-sharing should mean the link is dead, so a
+    later re-share mints a new one.
+    """
+    trip.is_public = False
+    trip.share_slug = None
+    await db.commit()
+    await db.refresh(trip)
+    return trip
+
+
+async def get_public_trip(db: AsyncSession, slug: str) -> Trip:
+    """404 for a slug that does not exist *and* for a trip that is no longer
+    public - never 403. A 403 would confirm the trip exists, which is exactly what
+    someone probing slugs wants to know."""
+    stmt = (
+        select(Trip)
+        .where(Trip.share_slug == slug, Trip.is_public.is_(True))
+        .options(
+            selectinload(Trip.stops).joinedload(TripStop.city),
+            selectinload(Trip.stops).selectinload(TripStop.activities),
+        )
+    )
+    trip = (await db.execute(stmt)).unique().scalar_one_or_none()
+    if trip is None:
+        raise ApiError("NOT_FOUND", "No public trip at that link")
+    return trip
+
+
+async def count_copies(db: AsyncSession, trip_id: uuid.UUID) -> int:
+    """Real, and free: `copied_from_trip_id` is already set on every copy."""
+    return (
+        await db.scalar(
+            select(func.count()).select_from(Trip).where(Trip.copied_from_trip_id == trip_id)
+        )
+        or 0
+    )
+
+
+async def owner_display_name(db: AsyncSession, trip: Trip) -> str:
+    """The only thing about the owner a public payload may carry. Not the email,
+    not the phone, not the city."""
+    user = await db.get(User, trip.user_id)
+    return user.name if user else "A traveller"
 
 
 # --- stops --------------------------------------------------------------------
@@ -466,6 +560,18 @@ async def add_activity(
         catalog = await db.get(Activity, data.activity_id)
         if catalog is None or not catalog.is_active:
             raise ApiError("NOT_FOUND", "Activity not found")
+        # A catalog activity belongs to exactly one city, and a stop is one city.
+        # Without this, a Udaipur tour attaches happily to a New York stop and the
+        # per-city budget rollup silently attributes it to New York.
+        if catalog.city_id != stop.city_id:
+            from app.models.catalog import City
+
+            here = await db.get(City, stop.city_id)
+            raise ApiError(
+                "VALIDATION_ERROR",
+                f"{catalog.name} is not in {here.name if here else 'this stop'}"
+                " - pick an activity from this stop's city, or add a custom one by name",
+            )
         # Snapshot: the saved trip must not change when the catalog does.
         name = name or catalog.name
         category = category or catalog.category
