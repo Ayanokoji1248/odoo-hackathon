@@ -1,0 +1,23 @@
+# ponytail: Postgres only. The app runs on the host for a fast inner loop;
+# Compose exists so everyone gets an identical DB.
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: globetrotter-db
+    environment:
+      POSTGRES_USER: globetrotter
+      POSTGRES_PASSWORD: globetrotter
+      POSTGRES_DB: globetrotter
+    ports:
+      # ponytail: 5433 on the host - a local Postgres already owns 5432 here.
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U globetrotter -d globetrotter"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  pgdata:

@@ -1,0 +1,18 @@
+# Phase 1 — foundation. Auth deps land in Phase 2.
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+sqlalchemy[asyncio]==2.0.36
+asyncpg==0.30.0
+alembic==1.14.0
+pydantic-settings==2.7.0
+
+# Phase 2 - auth
+pyjwt==2.10.1
+bcrypt==4.2.1
+email-validator==2.2.0
+
+# dev
+pytest==8.3.4
+pytest-asyncio==1.4.0
+httpx==0.28.1
+ruff==0.8.4
