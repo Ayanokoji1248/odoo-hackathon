@@ -7,11 +7,22 @@ venv/
 .ruff_cache/
 .mypy_cache/
 
-# Node (client)
+# Node
 node_modules/
-dist/
-build/
-.vite/
+
+# Next.js (client) — build output and generated files.
+# `next dev`/`next build` write .next/, which is hundreds of MB and regenerates
+# from source, so it must never be committed.
+.next/
+out/
+next-env.d.ts
+.turbo/
+*.tsbuildinfo
+
+# Dev server logs. These are written while a server is running, which on Windows
+# means git cannot delete them during a branch switch - and if they are tracked
+# on one branch and not another, every `git checkout` fails.
+*.log
 
 # Secrets - .env.example is tracked on purpose
 .env
