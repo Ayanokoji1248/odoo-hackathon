@@ -39,6 +39,7 @@ async def _schema():
 
     async with engine.begin() as conn:
         await conn.execute(text("CREATE EXTENSION IF NOT EXISTS citext"))
+        await conn.execute(text("CREATE EXTENSION IF NOT EXISTS pg_trgm"))
         await conn.run_sync(Base.metadata.create_all)
     yield
     await engine.dispose()
@@ -75,3 +76,75 @@ async def auth(client, register_payload):
         "tokens": data["tokens"],
         "headers": {"Authorization": f"Bearer {data['tokens']['access_token']}"},
     }
+
+
+@pytest.fixture
+async def catalog():
+    """A small, exact catalog: 3 active cities + 1 soft-deleted, 5 active
+    activities + 1 soft-deleted. Small enough that every filter assertion can
+    name the precise rows it expects."""
+    from decimal import Decimal
+
+    from app.models.catalog import Activity, ActivityCategory, City
+
+    cities = {
+        "paris": City(
+            name="Paris", country="France", region="Europe", cost_index=78,
+            popularity_score=98, latitude=Decimal("48.856600"),
+            longitude=Decimal("2.352200"), description="Boulevards and museums.",
+        ),
+        "prague": City(
+            name="Prague", country="Czechia", region="Europe", cost_index=48,
+            popularity_score=84, description="Gothic spires.",
+        ),
+        "bangkok": City(
+            name="Bangkok", country="Thailand", region="Asia", cost_index=30,
+            popularity_score=92, description="Night markets.",
+        ),
+        "retired": City(
+            name="Retired City", country="Nowhere", cost_index=10,
+            popularity_score=5, is_active=False,
+        ),
+    }
+    async with SessionLocal() as db:
+        db.add_all(cities.values())
+        await db.flush()
+        ids = {k: c.id for k, c in cities.items()}
+        activities = {
+            "louvre": Activity(
+                city_id=ids["paris"], name="Louvre Museum Pass",
+                category=ActivityCategory.CULTURE, estimated_cost=Decimal("22.00"),
+                currency="USD", duration_minutes=180, description="Skip the queue.",
+            ),
+            "seine": Activity(
+                city_id=ids["paris"], name="Seine River Cruise",
+                category=ActivityCategory.SIGHTSEEING, estimated_cost=Decimal("18.50"),
+                currency="USD", duration_minutes=60,
+            ),
+            "castle": Activity(
+                city_id=ids["prague"], name="Prague Castle Tour",
+                category=ActivityCategory.SIGHTSEEING, estimated_cost=Decimal("15.00"),
+                currency="USD", duration_minutes=120,
+            ),
+            "streetfood": Activity(
+                city_id=ids["bangkok"], name="Street Food Crawl",
+                category=ActivityCategory.FOOD, estimated_cost=Decimal("12.00"),
+                currency="USD", duration_minutes=180,
+            ),
+            "biketour": Activity(
+                city_id=ids["bangkok"], name="Temple Bike Tour",
+                category=ActivityCategory.ADVENTURE, estimated_cost=Decimal("30.00"),
+                currency="USD", duration_minutes=240,
+            ),
+            "retired": Activity(
+                city_id=ids["bangkok"], name="Retired Tour",
+                category=ActivityCategory.SIGHTSEEING, estimated_cost=Decimal("99.00"),
+                currency="USD", duration_minutes=60, is_active=False,
+            ),
+        }
+        db.add_all(activities.values())
+        await db.commit()
+        return {
+            "cities": ids,
+            "activities": {k: a.id for k, a in activities.items()},
+        }

@@ -9,6 +9,9 @@ class Settings(BaseSettings):
     app_name: str = "GlobeTrotter API"
     version: str = "0.1.0"
     debug: bool = False
+    # Separate from debug on purpose: DEBUG=true is the normal dev setting, and
+    # dumping every statement drowns anything else you were trying to read.
+    sql_echo: bool = False
 
     # postgresql+asyncpg://user:pass@host:port/db
     database_url: str

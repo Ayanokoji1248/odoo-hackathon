@@ -8,6 +8,7 @@ symptom → cause → check table for when something breaks.
 |---|---|---|
 | 1 | [phase-1-foundation.md](phase-1-foundation.md) | config, DB session, envelopes, exception handlers, Alembic wiring, `/health` |
 | 2 | [phase-2-auth-and-users.md](phase-2-auth-and-users.md) | register/login/refresh/logout, password reset, profile, tokens, `get_current_user` |
+| 3 | [phase-3-catalog.md](phase-3-catalog.md) | cities + activities catalog, search/filter/pagination, saved destinations, seed data |
 
 Spec: [../PRD.md](../PRD.md) · Phase plan: [../IMPLEMENTATION_PLAN.md](../IMPLEMENTATION_PLAN.md)
 
@@ -28,6 +29,9 @@ docker exec -it globetrotter-db psql -U globetrotter -d globetrotter
 
 # full suite, verbose, stop at first failure
 ./.venv/Scripts/python.exe -m pytest -x -vv
+
+# reload the catalog (idempotent)
+./.venv/Scripts/python.exe -m app.db.seed
 ```
 
 Every response carries an `x-request-id` header; it is echoed from the request if
