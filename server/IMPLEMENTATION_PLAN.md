@@ -21,6 +21,7 @@ Derived from [PRD.md](PRD.md). Scope: `server/` only.
 |---|---|
 | 1 | [docs/phase-1-foundation.md](docs/phase-1-foundation.md) |
 | 2 | [docs/phase-2-auth-and-users.md](docs/phase-2-auth-and-users.md) |
+| 3 | [docs/phase-3-catalog.md](docs/phase-3-catalog.md) |
 
 ---
 
@@ -66,18 +67,28 @@ Refresh and reset tokens are stored as **sha256 hashes**, not bcrypt — they al
 
 ---
 
-## Phase 3 — Catalog
+## Phase 3 — Catalog ✅
 
-| Area | Work |
+| Area | Built |
 |---|---|
 | Models | `cities`, `activities`, `activity_category` enum, `saved_destinations` |
-| Routes | `/users/me/saved-destinations` (GET · POST · DELETE) — deferred from Phase 2 |
-| Migration | trigram indexes (`pg_trgm`), `UNIQUE (name, country)`, cost-index CHECK |
-| Seed | `app/db/seed.py` — ≥ 40 cities, ≥ 200 activities, idempotent (upsert on natural key) |
-| Routes | `GET /cities`, `/cities/{id}`, `/cities/popular`, `GET /activities`, `/activities/{id}` — all public |
-| Service | `catalog_service.py` — search/filter/sort/paginate in SQL, not Python |
+| Migration | `pg_trgm` + GIN trigram indexes, `UNIQUE (name, country)`, cost-index CHECK, `ON DELETE RESTRICT` on `activities.city_id` |
+| Seed | **54 cities, 324 activities**, demo account — idempotent upsert on natural keys |
+| Routes | `GET /cities`, `/cities/popular`, `/cities/{id}`, `GET /activities`, `/activities/{id}` (public) + `/users/me/saved-destinations` GET · POST · DELETE |
+| Service | `catalog_service.py` — filter/sort/paginate in SQL; LIKE wildcards escaped so user input can't become a query operator |
+| Tests | 23 new (41 total) |
 
-**Done when:** AC 9. `?search=par` hits the trigram index; saved-destinations CRUD works.
+Catalog rows are removed with `is_active = false`, never `DELETE` — Phase 4 trips
+snapshot them. Hidden rows return 404, and every public read applies the filter.
+
+**Catalog is single-currency (`USD`).** No FX in v1, so seeding local currencies
+would let the Phase 5 budget sum VND and CHF into one total.
+
+**Also this phase:** `SQL_ECHO` split out of `DEBUG` — `DEBUG=true` was dumping
+every statement, which made the seed output unreadable.
+
+**Done — AC 9.** Filtered, paginated, correctly-ordered results; `meta.total` is the
+full match count; the trigram index is verified usable via `SET enable_seqscan = off`.
 
 ---
 

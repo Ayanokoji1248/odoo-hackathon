@@ -9,6 +9,8 @@ select = ["E", "F", "I", "UP", "B"]
 # alembic's generated env.py must import after `config = context.config`
 "alembic/env.py" = ["E402", "I001"]
 "alembic/versions/*" = ["E501", "I001"]
+# one city per line keeps the seed data readable as a table
+"app/db/seed.py" = ["E501"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

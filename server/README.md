@@ -3,7 +3,7 @@
 FastAPI + SQLAlchemy 2.0 async + PostgreSQL 16.
 Spec: [PRD.md](PRD.md) · Phased plan: [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) · **Debugging docs: [docs/](docs/README.md)**
 
-**Status:** Phases 1 (foundation) and 2 (auth & users) complete.
+**Status:** Phases 1 (foundation), 2 (auth & users) and 3 (catalog) complete.
 
 ## Run
 
@@ -13,11 +13,13 @@ cp .env.example .env                       # then set JWT_SECRET
 py -3.12 -m venv .venv
 ./.venv/Scripts/python.exe -m pip install -r requirements.txt
 ./.venv/Scripts/python.exe -m alembic upgrade head
+./.venv/Scripts/python.exe -m app.db.seed          # 54 cities, 324 activities, demo user
 ./.venv/Scripts/python.exe -m uvicorn app.main:app --reload
 ```
 
 - API docs: http://localhost:8000/docs
 - Health: http://localhost:8000/health
+- Demo login: `demo@globetrotter.app` / `demo12345`
 
 ## Checks
 
