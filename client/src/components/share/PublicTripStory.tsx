@@ -2,7 +2,8 @@
 
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { Copy, Share2, MapPin, CalendarDays, Wallet, Clock, Eye, Globe2 } from "lucide-react";
+import { Copy, Share2, MapPin, CalendarDays, Wallet, Clock, Eye } from "lucide-react";
+import { Logo } from "@/components/layout/Logo";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Avatar } from "@/components/ui/Avatar";
@@ -28,14 +29,7 @@ export function PublicTripStory({ shared }: { shared: SharedTrip }) {
     <div className="min-h-screen bg-background">
       {/* Minimal top bar */}
       <div className="flex items-center justify-between px-5 py-4 lg:px-10">
-        <span className="flex items-center gap-2">
-          <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-white">
-            <Globe2 className="h-4 w-4" />
-          </span>
-          <span className="font-extrabold tracking-tight text-text-primary">
-            Globe<span className="text-primary">Trotter</span>
-          </span>
-        </span>
+        <Logo href="/dashboard" size="sm" />
         <Button variant="outline" size="sm" onClick={() => router.push("/login")}>
           Create your own
         </Button>

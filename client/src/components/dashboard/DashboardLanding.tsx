@@ -1,16 +1,14 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { Plus, ArrowRight, Building2 } from "lucide-react";
-import { Button } from "@/components/ui/Button";
+import { ArrowRight, Building2 } from "lucide-react";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { FilterToolbar } from "@/components/layout/FilterToolbar";
 import { SectionHeading } from "@/components/layout/SectionHeading";
+import { BannerSlider } from "@/components/dashboard/BannerSlider";
 import { CityCard } from "@/components/cities/CityCard";
 import { TripCard } from "@/components/trips/TripCard";
-import { greeting } from "@/lib/utils/format";
 import type { City, Trip } from "@/types";
 
 interface Props {
@@ -43,29 +41,9 @@ export function DashboardLanding({ name, cities, previousTrips }: Props) {
 
   return (
     <div>
-      {/* Banner */}
-      <div className="relative mb-8 overflow-hidden rounded-3xl">
-        <Image
-          src="https://images.unsplash.com/photo-1488646953014-85cb44e25828?auto=format&fit=crop&w=1600&q=80"
-          alt="Travel banner"
-          width={1600}
-          height={500}
-          priority
-          className="h-56 w-full object-cover sm:h-72"
-        />
-        <div className="absolute inset-0 bg-linear-to-r from-slate-900/80 via-slate-900/45 to-slate-900/10" />
-        <div className="absolute inset-0 flex flex-col justify-center px-6 sm:px-10">
-          <p className="text-white/80" suppressHydrationWarning>{greeting()}, {firstName} 👋</p>
-          <h1 className="mt-1 max-w-lg text-display text-white">Where will you go next?</h1>
-          <p className="mt-2 max-w-md text-white/85">
-            Discover destinations, build day-by-day itineraries, and keep every trip on budget.
-          </p>
-          <div className="mt-5">
-            <Button size="lg" className="bg-white text-primary-hover hover:bg-white/90" onClick={() => router.push("/trips/create")}>
-              <Plus className="h-5 w-5" /> Plan a trip
-            </Button>
-          </div>
-        </div>
+      {/* Full-width banner slider (breaks out of the page container) */}
+      <div className="relative left-1/2 mb-8 w-screen -translate-x-1/2">
+        <BannerSlider firstName={firstName} />
       </div>
 
       {/* Toolbar */}
