@@ -65,6 +65,20 @@ export function pluralize(count: number, singular: string, plural?: string): str
   return `${count} ${count === 1 ? singular : plural ?? `${singular}s`}`;
 }
 
+/** Deterministic pseudo-discount % from a stable seed (so it never changes / no hydration mismatch). */
+export function pseudoDiscount(seed: string): number {
+  let h = 0;
+  for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0;
+  const options = [0, 0, 10, 15, 20, 20, 25, 30];
+  return options[h % options.length];
+}
+
+/** Original (strike-through) price implied by a discounted price. */
+export function strikePrice(price: number, pct: number): number {
+  if (pct <= 0 || price <= 0) return 0;
+  return Math.round(price / (1 - pct / 100) / 50) * 50;
+}
+
 export function greeting(date = new Date()): string {
   const h = date.getHours();
   if (h < 12) return "Good morning";

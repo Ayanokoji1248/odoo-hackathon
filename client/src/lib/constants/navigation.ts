@@ -1,32 +1,49 @@
 import {
-  LayoutDashboard,
-  MapPinned,
+  Home,
+  Luggage,
   Compass,
   Users,
   CalendarDays,
+  Building2,
+  Ticket,
   User,
   type LucideIcon,
 } from "lucide-react";
 
-export interface NavItem {
+export interface NavChild {
   label: string;
   href: string;
-  icon: LucideIcon;
+  icon?: LucideIcon;
+  description?: string;
 }
 
-/** Primary top-navigation links (match the wireframe screen flow). */
+export interface NavItem {
+  label: string;
+  href?: string;
+  icon: LucideIcon;
+  children?: NavChild[];
+}
+
+/** Primary top-navigation menu (icon on top, label below; with dropdowns). */
 export const topNav: NavItem[] = [
-  { label: "Home", href: "/dashboard", icon: LayoutDashboard },
-  { label: "My Trips", href: "/trips", icon: MapPinned },
-  { label: "Explore", href: "/cities", icon: Compass },
+  { label: "Home", href: "/dashboard", icon: Home },
+  { label: "My Trips", href: "/trips", icon: Luggage },
+  {
+    label: "Explore",
+    icon: Compass,
+    children: [
+      { label: "Cities", href: "/cities", icon: Building2, description: "Browse destinations" },
+      { label: "Activities", href: "/activities", icon: Ticket, description: "Things to do" },
+    ],
+  },
   { label: "Community", href: "/community", icon: Users },
   { label: "Calendar", href: "/calendar", icon: CalendarDays },
 ];
 
 /** Condensed nav for the mobile bottom bar. */
 export const bottomNav: NavItem[] = [
-  { label: "Home", href: "/dashboard", icon: LayoutDashboard },
-  { label: "Trips", href: "/trips", icon: MapPinned },
+  { label: "Home", href: "/dashboard", icon: Home },
+  { label: "Trips", href: "/trips", icon: Luggage },
   { label: "Explore", href: "/cities", icon: Compass },
   { label: "Community", href: "/community", icon: Users },
   { label: "Profile", href: "/profile", icon: User },

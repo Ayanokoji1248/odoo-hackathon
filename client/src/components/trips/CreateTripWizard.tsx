@@ -63,7 +63,7 @@ export function CreateTripWizard() {
                   "flex h-9 w-9 items-center justify-center rounded-full text-sm font-semibold transition-colors",
                   i < step && "bg-primary text-white",
                   i === step && "bg-primary text-white ring-4 ring-primary-light",
-                  i > step && "bg-surface-muted text-text-muted"
+                  i > step && "border-2 border-border bg-surface text-text-muted"
                 )}
               >
                 {i < step ? <Check className="h-4 w-4" /> : i + 1}
@@ -89,7 +89,7 @@ export function CreateTripWizard() {
         ))}
       </div>
 
-      <Card padded className="min-h-[360px]">
+      <Card padded>
         {step === 0 && (
           <div className="space-y-4">
             <h2 className="text-h3 text-text-primary">Basic Info</h2>
@@ -118,7 +118,7 @@ export function CreateTripWizard() {
             <p className="mb-4 text-sm text-text-secondary">
               Pick the cities you&apos;ll visit. {cityIds.length} selected.
             </p>
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
               {mockCities.map((city) => {
                 const active = cityIds.includes(city.id);
                 return (
@@ -126,22 +126,20 @@ export function CreateTripWizard() {
                     key={city.id}
                     onClick={() => toggleCity(city.id)}
                     className={cn(
-                      "relative overflow-hidden rounded-xl border-2 text-left transition-all",
-                      active ? "border-primary" : "border-transparent"
+                      "group relative aspect-4/3 overflow-hidden rounded-xl text-left ring-2 ring-offset-1 transition-all",
+                      active ? "ring-primary" : "ring-transparent hover:ring-border"
                     )}
                   >
-                    <div className="relative h-24">
-                      <Image src={city.imageUrl} alt={city.name} fill className="object-cover" sizes="200px" />
-                      <div className="absolute inset-0 bg-linear-to-t from-slate-900/70 to-transparent" />
-                      {active && (
-                        <span className="absolute right-2 top-2 flex h-5 w-5 items-center justify-center rounded-full bg-primary text-white">
-                          <Check className="h-3 w-3" />
-                        </span>
-                      )}
-                      <div className="absolute bottom-2 left-2 text-white">
-                        <p className="text-sm font-semibold">{city.name}</p>
-                        <p className="text-caption text-white/80">{city.country}</p>
-                      </div>
+                    <Image src={city.imageUrl} alt={city.name} fill className="object-cover transition-transform duration-500 group-hover:scale-105" sizes="(max-width:640px) 50vw, 200px" />
+                    <div className="absolute inset-0 bg-linear-to-t from-slate-900/75 to-transparent" />
+                    {active && (
+                      <span className="absolute right-2 top-2 flex h-5 w-5 items-center justify-center rounded-full bg-primary text-white">
+                        <Check className="h-3 w-3" />
+                      </span>
+                    )}
+                    <div className="absolute inset-x-0 bottom-0 p-2 text-white">
+                      <p className="truncate text-sm font-semibold leading-tight">{city.name}</p>
+                      <p className="truncate text-caption text-white/80">{city.country}</p>
                     </div>
                   </button>
                 );

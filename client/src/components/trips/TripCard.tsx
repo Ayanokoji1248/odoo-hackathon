@@ -39,7 +39,7 @@ export function TripCard({ trip }: { trip: Trip }) {
         </span>
       </Link>
 
-      <div className="p-4">
+      <div className="p-5">
         <div className="flex items-start justify-between gap-2">
           <Link href={`/trips/${trip.id}`} className="min-w-0">
             <h3 className="truncate text-h4 text-text-primary group-hover:text-primary">
@@ -79,17 +79,15 @@ export function TripCard({ trip }: { trip: Trip }) {
           {pluralize(trip.activityCount, "Activity", "Activities")}
         </p>
 
-        <div className="mt-4 flex items-center justify-between border-t border-dashed border-[#e6e6e6] pt-3">
-          <div>
-            <p className="text-caption text-text-muted">Estimated</p>
-            <p className="text-lg font-extrabold leading-tight text-secondary">
-              {formatCurrency(trip.estimatedBudget)}
-            </p>
-          </div>
-          <Button size="sm" variant="outline" onClick={() => router.push(`/trips/${trip.id}`)}>
-            View Trip
-          </Button>
+        <div className="mt-4 border-t border-dashed border-[#e6e6e6] pt-3">
+          <p className="text-caption text-text-muted">Estimated total</p>
+          <p className="text-2xl font-extrabold leading-none text-secondary">
+            {formatCurrency(trip.estimatedBudget)}
+          </p>
         </div>
+        <Button size="sm" className="mt-3 w-full" onClick={() => router.push(`/trips/${trip.id}`)}>
+          View Trip
+        </Button>
       </div>
     </div>
   );
