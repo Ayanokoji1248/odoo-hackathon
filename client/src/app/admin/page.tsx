@@ -1,7 +1,6 @@
 import { Users, MapPinned, Activity, Wallet } from "lucide-react";
 import { StatCard } from "@/components/dashboard/StatCard";
-import { AdminCharts } from "@/components/admin/AdminCharts";
-import { ManageUsers } from "@/components/admin/ManageUsers";
+import { AdminTabs } from "@/components/admin/AdminTabs";
 import { adminStats } from "@/data/mock/admin";
 import { formatCurrency } from "@/lib/utils/format";
 
@@ -20,12 +19,7 @@ export default function AdminPage() {
         <StatCard label="Avg Trip Budget" value={formatCurrency(adminStats.avgBudget)} icon={Wallet} tone="secondary" />
       </div>
 
-      <div className="mb-8">
-        <ManageUsers />
-      </div>
-
-      <h2 className="mb-4 text-h2 text-text-primary">User Trends &amp; Analytics</h2>
-      <AdminCharts />
+      <AdminTabs />
     </div>
   );
 }

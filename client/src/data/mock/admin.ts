@@ -39,6 +39,13 @@ export const popularActivities = [
   { name: "Shibuya Walk", count: 1980 },
 ];
 
+export const usersByRegion = [
+  { name: "Asia", value: 4200 },
+  { name: "Europe", value: 3100 },
+  { name: "Americas", value: 2600 },
+  { name: "Others", value: 2580 },
+];
+
 export interface ManagedUser {
   id: string;
   name: string;
