@@ -11,7 +11,7 @@ export function ActivitiesExplorer({ activities }: { activities: Activity[] }) {
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("all");
   const [city, setCity] = useState("all");
-  const [sort, setSort] = useState("rating");
+  const [sort, setSort] = useState("price");
 
   const categories = useMemo(() => ["all", ...Array.from(new Set(activities.map((a) => a.category)))], [activities]);
   const cities = useMemo(() => ["all", ...Array.from(new Set(activities.map((a) => a.cityName)))], [activities]);
@@ -24,7 +24,9 @@ export function ActivitiesExplorer({ activities }: { activities: Activity[] }) {
         const ci = city === "all" || a.cityName === city;
         return q && c && ci;
       })
-      .sort((a, b) => (sort === "rating" ? b.rating - a.rating : a.cost - b.cost));
+      .sort((a, b) =>
+        sort === "duration" ? a.durationHours - b.durationHours : a.cost - b.cost
+      );
   }, [activities, query, category, city, sort]);
 
   return (
@@ -36,7 +38,7 @@ export function ActivitiesExplorer({ activities }: { activities: Activity[] }) {
         placeholder="Search activities…"
         groupBy={{ value: category, options: categories.map((c) => ({ label: c === "all" ? "All categories" : c, value: c })), onChange: setCategory }}
         filterBy={{ value: city, options: cities.map((c) => ({ label: c === "all" ? "All cities" : c, value: c })), onChange: setCity }}
-        sortBy={{ value: sort, options: [{ label: "Rating", value: "rating" }, { label: "Price", value: "price" }], onChange: setSort }}
+        sortBy={{ value: sort, options: [{ label: "Price", value: "price" }, { label: "Duration", value: "duration" }], onChange: setSort }}
       />
 
       <p className="mb-4 text-sm text-text-secondary">{filtered.length} results</p>

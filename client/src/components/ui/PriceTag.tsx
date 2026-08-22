@@ -6,10 +6,12 @@ interface PriceTagProps {
   unit?: string;
   /** Show a pseudo discount % + strikeout (catalog items only). */
   discount?: boolean;
+  /** ISO-4217. Catalog data from the API is USD; mock rows are INR. */
+  currency?: string;
 }
 
 /** Tour-card style price: optional "% OFF" badge + strikeout, then a big bold price. */
-export function PriceTag({ price, seed = "", unit, discount = false }: PriceTagProps) {
+export function PriceTag({ price, seed = "", unit, discount = false, currency = "INR" }: PriceTagProps) {
   if (price <= 0) {
     return <p className="text-xl font-extrabold leading-none text-success">Free</p>;
   }
@@ -23,12 +25,12 @@ export function PriceTag({ price, seed = "", unit, discount = false }: PriceTagP
           <span className="rounded bg-linear-to-b from-[#f4b400] to-[#f97316] px-1.5 py-0.5 text-[11px] font-extrabold leading-none text-white">
             {pct}% OFF
           </span>
-          <del className="text-sm text-text-muted">{formatCurrency(strike)}</del>
+          <del className="text-sm text-text-muted">{formatCurrency(strike, currency)}</del>
         </div>
       )}
       <p className="flex items-baseline gap-1">
         <span className="text-2xl font-extrabold leading-none text-secondary">
-          {formatCurrency(price)}
+          {formatCurrency(price, currency)}
         </span>
         {unit && <span className="text-[11px] text-text-muted">{unit}</span>}
       </p>

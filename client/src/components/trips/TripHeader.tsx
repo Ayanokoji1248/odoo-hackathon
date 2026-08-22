@@ -44,7 +44,7 @@ export function TripHeader({ trip }: { trip: Trip }) {
             <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-white/90">
               <span className="flex items-center gap-1">
                 <MapPin className="h-4 w-4" />
-                {trip.stops.map((s) => s.cityName).join(" → ")}
+                {(trip.cityNames ?? trip.stops.map((s) => s.cityName)).join(" → ")}
               </span>
               <span className="flex items-center gap-1">
                 <Calendar className="h-4 w-4" />

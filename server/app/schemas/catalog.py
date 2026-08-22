@@ -20,6 +20,9 @@ class CityListItem(BaseModel):
     cost_index: int
     popularity_score: int
     image_url: str | None
+    tags: list[str]
+    best_season: str | None
+    avg_daily_cost: Decimal | None
 
 
 class CityRead(CityListItem):
@@ -33,6 +36,8 @@ class ActivityListItem(BaseModel):
 
     id: uuid.UUID
     city_id: uuid.UUID
+    # Resolved from the joined City row - see Activity.city_name.
+    city_name: str
     name: str
     category: ActivityCategory
     # Decimal serializes to a JSON string, which is exactly what we want -

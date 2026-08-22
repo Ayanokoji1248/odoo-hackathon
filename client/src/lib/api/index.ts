@@ -5,3 +5,4 @@ export * as itineraryApi from "./itinerary";
 export * as budgetApi from "./budget";
 export * as authApi from "./auth";
 export * as sharesApi from "./shares";
+export * as dashboardApi from "./dashboard";

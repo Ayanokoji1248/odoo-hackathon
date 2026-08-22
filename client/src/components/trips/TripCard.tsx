@@ -16,7 +16,9 @@ export function TripCard({ trip }: { trip: Trip }) {
   const router = useRouter();
   const { toast } = useToast();
   const status = tripStatusMeta[trip.status];
-  const route = trip.stops.map((s) => s.cityName).join(" → ");
+  // List responses carry city names only; detail responses carry full stops.
+  const cities = trip.cityNames ?? trip.stops.map((s) => s.cityName);
+  const route = cities.join(" → ");
   const days = daysBetween(trip.startDate, trip.endDate);
 
   return (
@@ -75,7 +77,7 @@ export function TripCard({ trip }: { trip: Trip }) {
           {formatDateRange(trip.startDate, trip.endDate)}
         </div>
         <p className="mt-1 text-caption text-text-muted">
-          {pluralize(days, "Day")} · {pluralize(trip.stops.length, "City", "Cities")} ·{" "}
+          {pluralize(days, "Day")} · {pluralize(cities.length, "City", "Cities")} ·{" "}
           {pluralize(trip.activityCount, "Activity", "Activities")}
         </p>
 

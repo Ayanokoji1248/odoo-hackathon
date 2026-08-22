@@ -11,15 +11,24 @@ import { SectionHeading } from "@/components/layout/SectionHeading";
 import { TripCard } from "@/components/trips/TripCard";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { MapPinned } from "lucide-react";
+import { useEffect, useState } from "react";
 import { useUser } from "@/lib/auth/AuthProvider";
-import { mockTrips } from "@/data/mock/trips";
+import { getTrips } from "@/lib/api/trips";
+import type { Trip } from "@/types";
 import { formatDate } from "@/lib/utils/format";
 
 export default function ProfilePage() {
   const user = useUser();
-  // Trips are still mock data — there is no /trips endpoint on the API yet.
-  const preplanned = mockTrips.filter((t) => t.status === "upcoming" || t.status === "ongoing" || t.status === "draft");
-  const previous = mockTrips.filter((t) => t.status === "completed");
+  const [trips, setTrips] = useState<Trip[]>([]);
+
+  useEffect(() => {
+    getTrips().then(setTrips).catch(() => setTrips([]));
+  }, []);
+
+  const preplanned = trips.filter(
+    (t) => t.status === "upcoming" || t.status === "ongoing" || t.status === "draft"
+  );
+  const previous = trips.filter((t) => t.status === "completed");
 
   return (
     <div>

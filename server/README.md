@@ -3,7 +3,9 @@
 FastAPI + SQLAlchemy 2.0 async + PostgreSQL 16.
 Spec: [PRD.md](PRD.md) | Phased plan: [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) | Debugging docs: [docs/](docs/README.md)
 
-**Status:** Phases 1 (foundation), 2 (auth & users), 3 (catalog), and the Phase 4 production-auth retrofit are complete.
+**Status:** Phases 1 (foundation), 2 (auth & users), 3 (catalog), the production-auth
+retrofit, 4 (trips & itinerary) and 5 (budget & dashboard) are complete.
+Next: Phase 6 - sharing & admin.
 
 ## Run
 

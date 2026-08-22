@@ -22,6 +22,8 @@ Derived from [PRD.md](PRD.md). Scope: `server/` only.
 | 1 | [docs/phase-1-foundation.md](docs/phase-1-foundation.md) |
 | 2 | [docs/phase-2-auth-and-users.md](docs/phase-2-auth-and-users.md) |
 | 3 | [docs/phase-3-catalog.md](docs/phase-3-catalog.md) |
+| 4 | [docs/phase-5-trips-and-itinerary.md](docs/phase-5-trips-and-itinerary.md) - file says 5; `phase-4-*` was taken by the auth retrofit |
+| 5 | [docs/phase-6-budget-and-dashboard.md](docs/phase-6-budget-and-dashboard.md) - file numbers stay one ahead of plan phases |
 | 4 auth retrofit | [docs/phase-4-production-auth.md](docs/phase-4-production-auth.md) |
 
 ---
@@ -111,7 +113,7 @@ full match count; the trigram index is verified usable via `SET enable_seqscan =
 
 ---
 
-## Phase 4 — Trips & itinerary
+## Phase 4 — Trips & itinerary ✅
 
 | Area | Work |
 |---|---|
@@ -123,11 +125,23 @@ full match count; the trigram index is verified usable via `SET enable_seqscan =
 
 Shrinking a trip's dates while stops sit outside → `409` listing offenders. Never silently orphan.
 
-**Done when:** AC 2, 3, 4, 6.
+| Tests | 34 new (99 total) |
+
+`order_index` stays dense and a reorder rewrites every row in one pass - safe only
+because `UNIQUE (trip_id, order_index)` is `DEFERRABLE INITIALLY DEFERRED`. Catalog
+name/category/cost are snapshotted onto `trip_activities`, so an admin editing a
+price cannot move a saved trip's budget.
+
+**Deferred:** `POST /trips/{id}/cover` - no storage credential exists, so there is
+nowhere to put the file. `PATCH /trips/{id}` takes a `cover_photo_url` meanwhile; the
+multipart endpoint lands in Phase 7 with the size and content-type rules.
+
+**Done - AC 2, 3, 4, 6.** The N+1 test compares a 1-stop and a 5-stop trip and asserts
+the query count is *identical*, not merely under some threshold.
 
 ---
 
-## Phase 5 — Budget & dashboard
+## Phase 5 — Budget & dashboard ✅
 
 | Area | Work |
 |---|---|
@@ -137,7 +151,17 @@ Shrinking a trip's dates while stops sit outside → `409` listing offenders. Ne
 
 Money is `Decimal` end to end. No floats, no denormalized totals column.
 
-**Done when:** AC 5 — breakdown matches a hand calculation.
+| Tests | 26 new (126 total) |
+
+Nothing is stored: every total is computed on read, because a cached total that
+nothing invalidates goes wrong the moment an activity price is edited. Activity
+costs are multiplied by `travelers` (they are per person); manual items are not.
+`by_day` uses `generate_series` so free days appear as `0.00` instead of being
+missing from the chart. Money that cannot be placed on a day or a city is reported
+as `undated_total` / `unassigned_total` rather than spread around.
+
+**Done - AC 5.** Verified against a hand calculation on the seeded demo trip:
+509.68 total, 56.63/day, and both the category and city splits sum back to the total.
 
 ---
 

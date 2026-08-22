@@ -10,6 +10,12 @@ symptom to cause to check table for when something breaks.
 | 2 | [phase-2-auth-and-users.md](phase-2-auth-and-users.md) | temporary cookie sessions, users, password reset, profile |
 | 3 | [phase-3-catalog.md](phase-3-catalog.md) | cities and activities catalog, search/filter/pagination, saved destinations, seed data |
 | 4 | [phase-4-production-auth.md](phase-4-production-auth.md) | JWT access cookie, rotating refresh cookie, session management |
+| 5 | [phase-5-trips-and-itinerary.md](phase-5-trips-and-itinerary.md) | trips, stops, trip activities, reordering, date rules, cost snapshotting, duplicate |
+| 6 | [phase-6-budget-and-dashboard.md](phase-6-budget-and-dashboard.md) | budget items, totals, gap-free per-day series, category/city splits, `/dashboard` |
+
+> **Numbering:** the build plan's Phase 4 is *trips*, but `phase-4-production-auth.md`
+> claimed that filename first for the auth retrofit. So the trips doc is numbered 5,
+> and plan-phase no longer matches file-number.
 
 Spec: [../PRD.md](../PRD.md) | Phase plan: [../IMPLEMENTATION_PLAN.md](../IMPLEMENTATION_PLAN.md)
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { Check, ChevronLeft, ChevronRight, Plus } from "lucide-react";
@@ -11,10 +11,38 @@ import { DatePicker } from "@/components/ui/DatePicker";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { useToast } from "@/components/ui/Toast";
-import { mockCities } from "@/data/mock/cities";
-import { mockActivities } from "@/data/mock/activities";
+import { getCities } from "@/lib/api/cities";
+import { getActivities } from "@/lib/api/activities";
+import { addStop, addTripActivity, createTrip } from "@/lib/api/trips";
 import { cn } from "@/lib/utils/cn";
 import { formatCurrency } from "@/lib/utils/format";
+import type { Activity, City } from "@/types";
+
+/** Split a trip's days as evenly as possible across its cities. */
+function splitDates(start: string, end: string, count: number) {
+  const first = new Date(start);
+  const total =
+    Math.round((new Date(end).getTime() - first.getTime()) / 86_400_000) + 1;
+  const base = Math.floor(total / count);
+  const extra = total % count;
+
+  const ranges: Array<{ startDate: string; endDate: string }> = [];
+  let cursor = 0;
+  for (let i = 0; i < count; i += 1) {
+    // The first `extra` cities absorb the remainder, so no day is lost.
+    const length = Math.max(1, base + (i < extra ? 1 : 0));
+    const from = new Date(first);
+    from.setDate(from.getDate() + cursor);
+    const to = new Date(first);
+    to.setDate(to.getDate() + cursor + length - 1);
+    ranges.push({
+      startDate: from.toISOString().slice(0, 10),
+      endDate: to.toISOString().slice(0, 10),
+    });
+    cursor += length;
+  }
+  return ranges;
+}
 
 const STEPS = ["Basic Info", "Destinations", "Activities", "Budget", "Review"];
 
@@ -29,10 +57,24 @@ export function CreateTripWizard() {
   const [cityIds, setCityIds] = useState<string[]>([]);
   const [activityIds, setActivityIds] = useState<string[]>([]);
   const [budget, setBudget] = useState("100000");
+  const [saving, setSaving] = useState(false);
 
-  const selectedCities = mockCities.filter((c) => cityIds.includes(c.id));
-  const relevantActivities = mockActivities.filter((a) => cityIds.includes(a.cityId));
-  const selectedActivities = mockActivities.filter((a) => activityIds.includes(a.id));
+  // Real catalog rows: the wizard has to submit API uuids, and mock ids would 404.
+  const [allCities, setAllCities] = useState<City[]>([]);
+  const [allActivities, setAllActivities] = useState<Activity[]>([]);
+
+  useEffect(() => {
+    getCities().then(setAllCities).catch(() => setAllCities([]));
+  }, []);
+
+  useEffect(() => {
+    if (cityIds.length === 0) return;
+    getActivities().then(setAllActivities).catch(() => setAllActivities([]));
+  }, [cityIds.length]);
+
+  const selectedCities = allCities.filter((c) => cityIds.includes(c.id));
+  const relevantActivities = allActivities.filter((a) => cityIds.includes(a.cityId));
+  const selectedActivities = allActivities.filter((a) => activityIds.includes(a.id));
 
   const toggleCity = (id: string) =>
     setCityIds((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));
@@ -46,9 +88,37 @@ export function CreateTripWizard() {
     step === 3 ||
     step === 4;
 
-  const finish = () => {
-    toast("Trip created successfully! 🎉", "success");
-    setTimeout(() => router.push("/trips"), 700);
+  const finish = async () => {
+    if (saving) return;
+    setSaving(true);
+    try {
+      const trip = await createTrip({ name, description, startDate, endDate });
+
+      // Stops must be created in order: the API assigns order_index by arrival.
+      const ranges = splitDates(startDate, endDate, cityIds.length || 1);
+      for (const [index, cityId] of cityIds.entries()) {
+        const range = ranges[index];
+        const { stop } = await addStop(trip.id, { cityId, ...range });
+
+        // Everything chosen for this city lands on its first day; the user can
+        // spread it out in the itinerary editor afterwards.
+        for (const activity of selectedActivities.filter((a) => a.cityId === cityId)) {
+          await addTripActivity(trip.id, stop.id, {
+            activityId: activity.id,
+            scheduledDate: range.startDate,
+          });
+        }
+      }
+
+      toast("Trip created successfully! 🎉", "success");
+      router.push(`/trips/${trip.id}`);
+    } catch (error) {
+      toast(
+        error instanceof Error ? error.message : "Could not create the trip",
+        "error"
+      );
+      setSaving(false);
+    }
   };
 
   return (
@@ -119,7 +189,7 @@ export function CreateTripWizard() {
               Pick the cities you&apos;ll visit. {cityIds.length} selected.
             </p>
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-              {mockCities.map((city) => {
+              {allCities.map((city) => {
                 const active = cityIds.includes(city.id);
                 return (
                   <button
@@ -241,7 +311,7 @@ export function CreateTripWizard() {
             Next <ChevronRight className="h-4 w-4" />
           </Button>
         ) : (
-          <Button onClick={finish}>
+          <Button onClick={finish} disabled={saving}>
             <Check className="h-4 w-4" /> Create Trip
           </Button>
         )}

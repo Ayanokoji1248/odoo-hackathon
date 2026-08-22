@@ -38,7 +38,10 @@ This is the read-only reference data the client cannot mock: 54 cities and
 | `latitude` / `longitude` | numeric(9,6) NULL | `Decimal`, never float |
 | `cost_index` | smallint | `CHECK (cost_index BETWEEN 1 AND 100)` |
 | `popularity_score` | integer | default 0, drives the default sort |
-| `image_url` / `description` | text NULL | `image_url` is unpopulated by the seed |
+| `image_url` / `description` | text NULL | seeded (see §5) |
+| `tags` | text[] NOT NULL | default `{}`; short label list the explore cards render |
+| `best_season` | varchar(40) NULL | e.g. `Apr - Jun` |
+| `avg_daily_cost` | numeric(10,2) NULL | per-person daily estimate, catalog currency |
 | `is_active` | boolean | default true — **soft delete** |
 
 Constraints and indexes:
@@ -72,6 +75,12 @@ Constraints and indexes:
 | `ix_activities_city_id_category` | the two most common filters together |
 | `ix_activities_estimated_cost` | cost range filter and the default sort |
 | `ix_activities_name_trgm` | GIN trigram |
+
+Activity responses also carry **`city_name`**, resolved through the `city`
+relationship rather than denormalised into a column. `Activity.city` is declared
+`lazy="raise"`, so a query that forgets `joinedload(Activity.city)` fails loudly
+in the service instead of surfacing as `MissingGreenlet` during serialization.
+Two tests cover it.
 
 `ON DELETE RESTRICT` is deliberate. Cities are referenced by activities *and*
 (from Phase 4) by trip stops. Deleting one should be a loud error, not a silent
@@ -214,9 +223,27 @@ v1, so the Phase 5 budget service would happily sum VND and CHF into one
 `grand_total`. One currency keeps the arithmetic honest. The `currency` column
 stays for when conversion arrives.
 
-**No images.** `image_url` is NULL everywhere. Hotlinking a stock-photo host
-would make the demo depend on someone else's uptime. The column exists; fill it
-if a real asset pipeline appears.
+**Images are seeded** (reversing the Phase 3 decision to skip them — the client
+already renders Unsplash and `next.config.ts` allowlists the host, so the
+dependency was already accepted).
+
+| | Source |
+|---|---|
+| 12 cities | a real photo of that city |
+| the other 42 | a neutral scenery photo per region, from `REGION_IMAGES` |
+| all 324 activities | a per-category pool, rotated by index so they do not repeat |
+
+The region fallbacks are deliberately generic landscapes rather than another
+city's skyline: a *wrong* landmark reads worse to a viewer than a generic one.
+
+**`avg_daily_cost` is derived, not authored:** `cost_index × 1.8`, rounded to
+cents — Zurich (97) lands at $174.60/day, Jaipur (20) at $36.00. It is stored
+rather than computed on read so an admin can override a row that looks wrong.
+
+**`tags` and `best_season` are authored** per city in `CITY_EXTRAS`, keyed by
+name and kept separate from the `CITIES` tuple so geographic facts and UI copy
+stay independently editable. A city missing from `CITY_EXTRAS` raises a `KeyError`
+during seeding rather than silently seeding blank content.
 
 **Demo trips are not seeded yet** — PRD §8 wants a demo user with two populated
 trips, and `trips` does not exist until Phase 4. `seed.py` gains that step then.
@@ -300,6 +327,9 @@ SELECT extname FROM pg_extension ORDER BY extname;
 | Seed run prints 50 KB of SQL | `SQL_ECHO=true` | §6 |
 | Seed duplicates rows | a unique constraint was dropped | `uq_cities_name_country`, `uq_activities_city_id_name` |
 | Saving a city 409s when the list looks empty | the row belongs to a different user, or `SavedDestination` PK collision | query `saved_destinations` directly |
+| `MissingGreenlet` / `lazy="raise"` error on `Activity.city` | a query dropped `joinedload(Activity.city)` | `city_name` needs it — see `catalog_service.list_activities` |
+| Explore cards show no photos | seed not re-run since the image columns landed | `python -m app.db.seed` |
+| `KeyError` on a city name during seeding | a row was added to `CITIES` but not `CITY_EXTRAS` | add its tags/season/photo entry |
 | `MissingGreenlet` reading `SavedDestination.city` | that relationship is `lazy="raise"` on purpose | join `City` explicitly, as `list_saved_destinations` does |
 
 ---
@@ -348,6 +378,7 @@ brittle.
 | `POST/PATCH/DELETE /admin/cities` and `/admin/activities` | Phase 6 — this phase is read-only |
 | `/admin/cities/top`, `/admin/activities/top` | Phase 6 |
 | Demo trips in the seed | Phase 4, once `trips` exists |
-| `image_url` content | whenever there is a real asset source |
 | Real activity descriptions | cosmetic; templates carry names only |
+| Activity ratings / review counts | **not planned** — no review system exists, and the UI field was removed rather than filled with invented numbers |
+| `country_code`, `timezone` on cities | the UI type has them but renders neither; optional client-side until something needs them |
 | Full-text / ranked search (`similarity()` ordering) | not needed at this size; the trigram index already supports it if it becomes worth doing |

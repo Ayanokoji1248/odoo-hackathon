@@ -8,7 +8,7 @@ import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
 import { Dropdown, DropdownItem } from "@/components/ui/Dropdown";
 import { Logo } from "./Logo";
-import { topNav } from "@/lib/constants/navigation";
+import { topNav, type NavItem } from "@/lib/constants/navigation";
 import { cn } from "@/lib/utils/cn";
 import { useAuth, useUser } from "@/lib/auth/AuthProvider";
 

@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { Clock, Plus, Star, MapPin } from "lucide-react";
+import { Clock, Plus, MapPin } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { PriceTag } from "@/components/ui/PriceTag";
@@ -25,10 +25,6 @@ export function ActivityCard({ activity }: { activity: Activity }) {
         <span className="absolute left-3 top-3">
           <Badge variant="primary">{activity.category}</Badge>
         </span>
-        <span className="absolute right-3 top-3 flex items-center gap-1 rounded-full bg-black/55 px-2 py-0.5 text-xs font-semibold text-white">
-          <Star className="h-3 w-3 fill-amber-400 text-amber-400" />
-          {activity.rating}
-        </span>
         <span className="absolute bottom-3 right-3 flex items-center gap-1 rounded-md border border-white bg-white px-2 py-0.5 text-[12px] font-semibold text-secondary shadow-sm">
           <Clock className="h-3 w-3" /> {pluralize(activity.durationHours, "hr")}
         </span>
@@ -44,7 +40,7 @@ export function ActivityCard({ activity }: { activity: Activity }) {
 
         {/* Price */}
         <div className="mt-auto border-t border-dashed border-[#e0e0e0] pt-4">
-          <PriceTag price={activity.cost} seed={activity.id} unit="per person" discount />
+          <PriceTag price={activity.cost} seed={activity.id} unit="per person" currency="USD" discount />
         </div>
 
         <Button

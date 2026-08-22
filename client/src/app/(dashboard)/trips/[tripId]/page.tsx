@@ -1,24 +1,38 @@
+"use client";
+
 import Image from "next/image";
-import { notFound } from "next/navigation";
+import { useEffect, useState } from "react";
+import { useParams } from "next/navigation";
 import { CalendarDays, Building2, Compass, Wallet } from "lucide-react";
 import { TripHeader } from "@/components/trips/TripHeader";
 import { StatCard } from "@/components/dashboard/StatCard";
 import { Card } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
-import { getTripById } from "@/data/mock/trips";
-import { getCityById } from "@/data/mock/cities";
+import { getTrip } from "@/lib/api/trips";
 import { formatCurrency, formatDateRange, daysBetween, pluralize } from "@/lib/utils/format";
+import type { Trip } from "@/types";
 
-export default async function TripOverviewPage({
-  params,
-}: {
-  params: Promise<{ tripId: string }>;
-}) {
-  const { tripId } = await params;
-  const trip = getTripById(tripId);
-  if (!trip) notFound();
+export default function TripOverviewPage() {
+  const { tripId } = useParams<{ tripId: string }>();
+  const [trip, setTrip] = useState<Trip | null | undefined>(undefined);
 
-  const days = daysBetween(trip.startDate, trip.endDate);
+  useEffect(() => {
+    getTrip(tripId)
+      .then((t) => setTrip(t ?? null))
+      .catch(() => setTrip(null));
+  }, [tripId]);
+
+  if (trip === undefined) return <div className="h-64 animate-pulse rounded-3xl bg-black/5" />;
+  if (trip === null) {
+    return (
+      <Card>
+        <p className="text-text-secondary">That trip could not be found.</p>
+      </Card>
+    );
+  }
+
+  const days = trip.durationDays ?? daysBetween(trip.startDate, trip.endDate);
+  const currency = trip.currency ?? "USD";
 
   return (
     <div>
@@ -28,7 +42,12 @@ export default async function TripOverviewPage({
         <StatCard label="Duration" value={pluralize(days, "Day")} icon={CalendarDays} tone="primary" />
         <StatCard label="Cities" value={String(trip.stops.length)} icon={Building2} tone="info" />
         <StatCard label="Activities" value={String(trip.activityCount)} icon={Compass} tone="secondary" />
-        <StatCard label="Est. Budget" value={formatCurrency(trip.estimatedBudget)} icon={Wallet} tone="success" />
+        <StatCard
+          label="Est. Budget"
+          value={formatCurrency(trip.estimatedBudget, currency)}
+          icon={Wallet}
+          tone="success"
+        />
       </div>
 
       {trip.description && (
@@ -40,10 +59,15 @@ export default async function TripOverviewPage({
 
       <div className="mt-6">
         <h2 className="mb-4 text-h2 text-text-primary">Trip Stops</h2>
-        <div className="space-y-4">
-          {trip.stops.map((stop, i) => {
-            const city = getCityById(stop.cityId);
-            return (
+        {trip.stops.length === 0 ? (
+          <Card>
+            <p className="text-text-secondary">
+              No stops yet — add a city from the itinerary tab to get started.
+            </p>
+          </Card>
+        ) : (
+          <div className="space-y-4">
+            {trip.stops.map((stop, i) => (
               <Card key={stop.id} padded={false} className="flex overflow-hidden">
                 <div className="relative hidden w-40 shrink-0 sm:block">
                   <Image src={stop.imageUrl} alt={stop.cityName} fill className="object-cover" sizes="160px" />
@@ -59,24 +83,26 @@ export default async function TripOverviewPage({
                       </div>
                       <p className="mt-0.5 text-sm text-text-secondary">{stop.country}</p>
                     </div>
-                    {city && <Badge variant="outline">{city.costIndex}</Badge>}
+                    {/* Carried through from the nested city on the trip response,
+                        so this page needs no extra request per stop. */}
+                    {stop.costIndex && <Badge variant="outline">{stop.costIndex}</Badge>}
                   </div>
                   <p className="mt-2 text-sm text-text-secondary">
                     {formatDateRange(stop.startDate, stop.endDate)} ·{" "}
                     {pluralize(daysBetween(stop.startDate, stop.endDate), "day")}
                   </p>
-                  {city && (
+                  {stop.tags && stop.tags.length > 0 && (
                     <div className="mt-3 flex flex-wrap gap-1.5">
-                      {city.tags.slice(0, 4).map((t) => (
+                      {stop.tags.slice(0, 4).map((t) => (
                         <Badge key={t}>{t}</Badge>
                       ))}
                     </div>
                   )}
                 </div>
               </Card>
-            );
-          })}
-        </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

@@ -46,7 +46,7 @@ export function CityCard({ city }: { city: City }) {
 
         {/* Price */}
         <div className="mt-auto border-t border-dashed border-[#e0e0e0] pt-4">
-          <PriceTag price={city.avgDailyCost} seed={city.id} unit="per person" discount />
+          <PriceTag price={city.avgDailyCost} seed={city.id} unit="per person" currency="USD" discount />
         </div>
 
         <Button

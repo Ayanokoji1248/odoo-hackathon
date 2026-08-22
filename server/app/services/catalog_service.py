@@ -4,6 +4,7 @@ from decimal import Decimal
 
 from sqlalchemy import Select, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import joinedload
 
 from app.core.exceptions import ApiError
 from app.core.pagination import PaginationParams
@@ -91,7 +92,9 @@ async def list_activities(
     search: str | None = None,
     sort: ActivitySort = "cost",
 ) -> tuple[Sequence[Activity], int]:
-    stmt = select(Activity).where(Activity.is_active.is_(True))
+    # joinedload, not selectinload: one row per activity either way, and
+    # Activity.city_name needs the City row present at serialization time.
+    stmt = select(Activity).options(joinedload(Activity.city)).where(Activity.is_active.is_(True))
     if city_id is not None:
         stmt = stmt.where(Activity.city_id == city_id)
     if category is not None:
@@ -111,7 +114,10 @@ async def list_activities(
 
 
 async def get_activity(db: AsyncSession, activity_id: uuid.UUID) -> Activity:
-    activity = await db.get(Activity, activity_id)
+    stmt = (
+        select(Activity).options(joinedload(Activity.city)).where(Activity.id == activity_id)
+    )
+    activity = (await db.execute(stmt)).scalar_one_or_none()
     if activity is None or not activity.is_active:
         raise ApiError("NOT_FOUND", "Activity not found")
     return activity

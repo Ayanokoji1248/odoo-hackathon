@@ -8,7 +8,6 @@ from sqlalchemy import (
     Boolean,
     CheckConstraint,
     DateTime,
-    Enum,
     ForeignKey,
     Index,
     Integer,
@@ -20,7 +19,7 @@ from sqlalchemy import (
     func,
     text,
 )
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import ARRAY, ENUM, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base, TimestampMixin, UUIDPkMixin
@@ -40,6 +39,13 @@ class ActivityCategory(enum.StrEnum):
     TRANSPORT = "TRANSPORT"
 
 
+# One shared type object, referenced by both `activities.category` and
+# `trip_activities.category`. Two separate Enum() calls with the same name race
+# on CREATE TYPE, because metadata.create_all has no ordering guarantee between
+# the two tables.
+activity_category_enum = ENUM(ActivityCategory, name="activity_category", create_type=True)
+
+
 class City(UUIDPkMixin, TimestampMixin, Base):
     __tablename__ = "cities"
 
@@ -54,6 +60,15 @@ class City(UUIDPkMixin, TimestampMixin, Base):
     )
     image_url: Mapped[str | None] = mapped_column(Text)
     description: Mapped[str | None] = mapped_column(Text)
+    # Display metadata the explore UI renders. tags is a real array rather than a
+    # join table: it is a short, unordered label list that is only ever read whole.
+    tags: Mapped[list[str]] = mapped_column(
+        ARRAY(String(40)), nullable=False, server_default=text("'{}'"), default=list
+    )
+    best_season: Mapped[str | None] = mapped_column(String(40))
+    # A per-person daily estimate in the catalog currency, seeded from cost_index.
+    # Stored rather than derived so an admin can override a bad guess.
+    avg_daily_cost: Mapped[Decimal | None] = mapped_column(Numeric(10, 2))
     # Soft delete: admin catalog management flips this instead of deleting rows
     # that saved trips still reference.
     is_active: Mapped[bool] = mapped_column(
@@ -87,9 +102,7 @@ class Activity(UUIDPkMixin, TimestampMixin, Base):
     )
     name: Mapped[str] = mapped_column(String(160), nullable=False)
     description: Mapped[str | None] = mapped_column(Text)
-    category: Mapped[ActivityCategory] = mapped_column(
-        Enum(ActivityCategory, name="activity_category"), nullable=False
-    )
+    category: Mapped[ActivityCategory] = mapped_column(activity_category_enum, nullable=False)
     estimated_cost: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
     currency: Mapped[str] = mapped_column(CHAR(3), nullable=False)
     duration_minutes: Mapped[int | None] = mapped_column(Integer)
@@ -98,7 +111,14 @@ class Activity(UUIDPkMixin, TimestampMixin, Base):
         Boolean, nullable=False, server_default=text("true"), default=True
     )
 
-    city: Mapped[City] = relationship(back_populates="activities")
+    # lazy="raise" so a forgotten joinedload fails loudly here instead of
+    # surfacing as MissingGreenlet during response serialization.
+    city: Mapped[City] = relationship(back_populates="activities", lazy="raise")
+
+    @property
+    def city_name(self) -> str:
+        """Requires the caller to have joined City - see catalog_service."""
+        return self.city.name
 
     __table_args__ = (
         # Natural key - also what makes the seed script idempotent.

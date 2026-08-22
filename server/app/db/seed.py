@@ -9,6 +9,7 @@ cities, `city_id, name` for activities).
 
 import asyncio
 import uuid
+from datetime import date, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 
 from sqlalchemy import select
@@ -18,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.security import hash_password
 from app.db.session import SessionLocal, engine
 from app.models.catalog import Activity, ActivityCategory, City
+from app.models.trip import Trip, TripActivity, TripStop
 from app.models.user import User
 
 # One currency for the whole catalog. There is no FX in v1, so seeding local
@@ -86,6 +88,108 @@ CITIES: list[tuple[str, str, str, float, float, int, int, str]] = [
     ("Auckland", "New Zealand", "Oceania", -36.8485, 174.7633, 74, 62, "Volcanic cones, two harbours and island ferries."),
 ]
 
+# Display metadata, keyed by city name. Kept separate from the CITIES table above
+# so geographic facts and UI content stay independently editable.
+#   name -> (tags, best_season, unsplash photo id or None)
+CITY_EXTRAS: dict[str, tuple[list[str], str, str | None]] = {
+    "Paris": (["Romance", "Art", "Food", "Culture"], "Apr - Jun", "1502602898657-3e91760cbb34"),
+    "London": (["History", "Museums", "Nightlife", "Shopping"], "May - Sep", "1513635269975-59663e0ac1ad"),
+    "Rome": (["History", "Food", "Culture", "Architecture"], "Apr - Jun", "1552832230-c0197dd311b5"),
+    "Barcelona": (["Beach", "Architecture", "Food", "Nightlife"], "May - Jun", "1583422409516-2895a77efded"),
+    "Amsterdam": (["Canals", "Museums", "Cycling", "Nightlife"], "Apr - May", None),
+    "Berlin": (["History", "Nightlife", "Art", "Budget"], "May - Sep", None),
+    "Prague": (["History", "Architecture", "Budget", "Beer"], "May - Sep", None),
+    "Vienna": (["Music", "Palaces", "Coffee", "Museums"], "Apr - May", None),
+    "Lisbon": (["Coastal", "Food", "Trams", "Budget"], "Mar - May", "1585208798174-6cedd86e019a"),
+    "Budapest": (["Thermal Baths", "Budget", "Nightlife", "History"], "Apr - Jun", None),
+    "Athens": (["Ancient", "History", "Food", "Islands"], "Apr - Jun", None),
+    "Istanbul": (["Bazaars", "History", "Food", "Budget"], "Apr - May", None),
+    "Copenhagen": (["Design", "Food", "Cycling", "Harbour"], "Jun - Aug", None),
+    "Stockholm": (["Islands", "Design", "Museums", "Nature"], "Jun - Aug", None),
+    "Reykjavik": (["Northern Lights", "Geysers", "Nature", "Adventure"], "Jun - Aug", None),
+    "Dublin": (["Pubs", "Literature", "Coastal", "Music"], "May - Sep", None),
+    "Edinburgh": (["Castles", "Festivals", "History", "Hiking"], "Jun - Aug", None),
+    "Zurich": (["Alps", "Lakes", "Luxury", "Nature"], "Jun - Sep", None),
+    "Venice": (["Canals", "Art", "Romance", "History"], "Apr - Jun", None),
+    "Santorini": (["Sunsets", "Beach", "Romance", "Wine"], "May - Jun", None),
+    "New York": (["Skyline", "Museums", "Food", "Shopping"], "Apr - Jun", "1496442226666-8d4d0e62e6e9"),
+    "San Francisco": (["Bay", "Tech", "Food", "Hiking"], "Sep - Nov", None),
+    "Los Angeles": (["Beach", "Film", "Food", "Road Trip"], "Mar - May", None),
+    "Chicago": (["Architecture", "Lakefront", "Jazz", "Food"], "Jun - Sep", None),
+    "Toronto": (["Multicultural", "Food", "Lakeside", "Museums"], "May - Sep", None),
+    "Vancouver": (["Mountains", "Ocean", "Nature", "Skiing"], "Jun - Sep", None),
+    "Mexico City": (["Street Food", "Murals", "Pyramids", "Budget"], "Mar - May", None),
+    "Havana": (["Vintage Cars", "Music", "Colonial", "Beach"], "Nov - Apr", None),
+    "Rio de Janeiro": (["Beach", "Carnival", "Hiking", "Nightlife"], "Dec - Mar", None),
+    "Buenos Aires": (["Tango", "Steak", "Nightlife", "Budget"], "Oct - Nov", None),
+    "Lima": (["Food", "Coastal", "Museums", "Budget"], "Dec - Apr", None),
+    "Cusco": (["Inca", "Trekking", "Altitude", "History"], "May - Sep", None),
+    "Cartagena": (["Caribbean", "Colonial", "Beach", "Nightlife"], "Dec - Apr", None),
+    "Tokyo": (["Food", "Technology", "Culture", "Shopping"], "Mar - May", "1540959733332-eab4deabeeaf"),
+    "Kyoto": (["Temples", "Gardens", "Tradition", "Blossom"], "Mar - May", None),
+    "Seoul": (["Palaces", "Street Food", "Shopping", "Nightlife"], "Apr - Jun", None),
+    "Singapore": (["Hawker Food", "Gardens", "Shopping", "Family"], "Feb - Apr", None),
+    "Bangkok": (["Street Food", "Temples", "Markets", "Budget"], "Nov - Feb", "1508009603885-50cf7c579365"),
+    "Chiang Mai": (["Temples", "Mountains", "Slow Travel", "Budget"], "Nov - Feb", None),
+    "Bali": (["Beach", "Surf", "Rice Terraces", "Yoga"], "Apr - Oct", "1537996194471-e657df975ab4"),
+    "Hanoi": (["Street Food", "Old Quarter", "Budget", "Lakes"], "Oct - Dec", None),
+    "Ho Chi Minh City": (["Street Food", "Markets", "History", "Budget"], "Dec - Mar", None),
+    "Kathmandu": (["Temples", "Himalaya", "Trekking", "Budget"], "Oct - Nov", None),
+    "Jaipur": (["Palaces", "Forts", "Markets", "Budget"], "Oct - Mar", None),
+    "Udaipur": (["Lakes", "Palaces", "Romance", "Heritage"], "Sep - Mar", None),
+    "Dubai": (["Desert", "Luxury", "Shopping", "Skyline"], "Nov - Mar", "1512453979798-5ea266f8880c"),
+    "Marrakesh": (["Souks", "Riads", "Desert", "Atlas"], "Mar - May", None),
+    "Cape Town": (["Mountain", "Wine", "Beach", "Hiking"], "Nov - Mar", "1580060839134-75a5edca2e99"),
+    "Cairo": (["Pyramids", "Nile", "History", "Budget"], "Oct - Apr", None),
+    "Nairobi": (["Safari", "Wildlife", "Nature", "Coffee"], "Jun - Oct", None),
+    "Sydney": (["Harbour", "Beach", "Coastal Walks", "Food"], "Sep - Nov", "1506973035872-a4ec16b8e8d9"),
+    "Melbourne": (["Coffee", "Street Art", "Live Music", "Sport"], "Mar - May", None),
+    "Queenstown": (["Adventure", "Lake", "Skiing", "Bungee"], "Dec - Feb", None),
+    "Auckland": (["Harbour", "Volcanoes", "Islands", "Sailing"], "Nov - Apr", None),
+}
+
+# Neutral scenery for cities without a specific photo. Deliberately generic rather
+# than another city's skyline - a wrong landmark reads worse than a generic one.
+REGION_IMAGES: dict[str, str] = {
+    "Europe": "1520986606214-8b456906c813",
+    "Asia": "1523531294919-4bcd7c65e216",
+    "North America": "1543349689-9a4d426bee8e",
+    "South America": "1531592937781-344ad608fabf",
+    "Africa": "1534430480872-3498386e7856",
+    "Middle East": "1583779457094-ab6f9164a1c8",
+    "Oceania": "1492666673288-3c4b4576ad9a",
+}
+
+# A rotating pool per category, so 324 activities do not all share one photo.
+ACTIVITY_IMAGES: dict[ActivityCategory, list[str]] = {
+    ActivityCategory.SIGHTSEEING: ["1492666673288-3c4b4576ad9a", "1520986606214-8b456906c813", "1543349689-9a4d426bee8e", "1583779457094-ab6f9164a1c8"],
+    ActivityCategory.FOOD: ["1431274172761-fca41d930114", "1504674900247-0877df9cc836", "1515443961218-a51367888e4b", "1516100882582-96c3a05fe590", "1579584425555-c3ce17fd4351"],
+    ActivityCategory.CULTURE: ["1499856871958-5b9627545d1a", "1518548419970-58e3b4079ab2", "1524413840807-0c3cb6fa808d", "1531572753322-ad063cecc140", "1574322454798-e64602f1a4a1"],
+    ActivityCategory.ADVENTURE: ["1502680390469-be75c86b636f", "1531592937781-344ad608fabf", "1534430480872-3498386e7856"],
+    ActivityCategory.NIGHTLIFE: ["1503095396549-807759245b35", "1503899036084-c55cdd92da26"],
+    ActivityCategory.SHOPPING: ["1516100882582-96c3a05fe590", "1579584425555-c3ce17fd4351"],
+    ActivityCategory.RELAXATION: ["1523531294919-4bcd7c65e216", "1534430480872-3498386e7856"],
+    ActivityCategory.TRANSPORT: ["1502680390469-be75c86b636f", "1492666673288-3c4b4576ad9a"],
+}
+
+# Same shape as the client's img() helper, so URLs cache-match across both.
+UNSPLASH = "https://images.unsplash.com/photo-{}?auto=format&fit=crop&w=800&q=80"
+
+# A per-person daily estimate. cost_index runs 1-100, so this puts Zurich (97)
+# near $175/day and Jaipur (20) near $36 - the right order of magnitude. Stored
+# rather than derived on read so an admin can override a row that looks wrong.
+DAILY_COST_PER_INDEX_POINT = Decimal("1.8")
+
+
+def photo(photo_id: str | None, region: str | None) -> str | None:
+    chosen = photo_id or REGION_IMAGES.get(region or "")
+    return UNSPLASH.format(chosen) if chosen else None
+
+
+def daily_cost(cost_index: int) -> Decimal:
+    return (cost_index * DAILY_COST_PER_INDEX_POINT).quantize(Decimal("0.01"))
+
+
 # category, name template, base cost in a mid-priced city, duration in minutes
 ACTIVITY_TEMPLATES: list[tuple[ActivityCategory, str, int, int | None]] = [
     (ActivityCategory.SIGHTSEEING, "{city} Old Town Walking Tour", 25, 120),
@@ -119,20 +223,26 @@ def scaled_cost(base: int, cost_index: int) -> Decimal:
 
 
 async def seed_cities(db: AsyncSession) -> dict[tuple[str, str], uuid.UUID]:
-    rows = [
-        {
-            "name": name,
-            "country": country,
-            "region": region,
-            "latitude": Decimal(str(lat)),
-            "longitude": Decimal(str(lon)),
-            "cost_index": cost_index,
-            "popularity_score": popularity,
-            "description": description,
-            "is_active": True,
-        }
-        for name, country, region, lat, lon, cost_index, popularity, description in CITIES
-    ]
+    rows = []
+    for name, country, region, lat, lon, cost_index, popularity, description in CITIES:
+        tags, best_season, photo_id = CITY_EXTRAS[name]
+        rows.append(
+            {
+                "name": name,
+                "country": country,
+                "region": region,
+                "latitude": Decimal(str(lat)),
+                "longitude": Decimal(str(lon)),
+                "cost_index": cost_index,
+                "popularity_score": popularity,
+                "description": description,
+                "tags": tags,
+                "best_season": best_season,
+                "avg_daily_cost": daily_cost(cost_index),
+                "image_url": photo(photo_id, region),
+                "is_active": True,
+            }
+        )
     stmt = insert(City).values(rows)
     stmt = stmt.on_conflict_do_update(
         index_elements=[City.name, City.country],
@@ -145,6 +255,10 @@ async def seed_cities(db: AsyncSession) -> dict[tuple[str, str], uuid.UUID]:
                 "cost_index",
                 "popularity_score",
                 "description",
+                "tags",
+                "best_season",
+                "avg_daily_cost",
+                "image_url",
                 "is_active",
             )
         },
@@ -164,6 +278,7 @@ async def seed_activities(db: AsyncSession, city_ids: dict[tuple[str, str], uuid
             category, template, base, duration = ACTIVITY_TEMPLATES[
                 (offset + k) % len(ACTIVITY_TEMPLATES)
             ]
+            pool = ACTIVITY_IMAGES[category]
             rows.append(
                 {
                     "city_id": city_id,
@@ -172,6 +287,7 @@ async def seed_activities(db: AsyncSession, city_ids: dict[tuple[str, str], uuid
                     "estimated_cost": scaled_cost(base, cost_index),
                     "currency": CATALOG_CURRENCY,
                     "duration_minutes": duration,
+                    "image_url": UNSPLASH.format(pool[(i + k) % len(pool)]),
                     "is_active": True,
                 }
             )
@@ -181,7 +297,14 @@ async def seed_activities(db: AsyncSession, city_ids: dict[tuple[str, str], uuid
         index_elements=[Activity.city_id, Activity.name],
         set_={
             c: stmt.excluded[c]
-            for c in ("category", "estimated_cost", "currency", "duration_minutes", "is_active")
+            for c in (
+                "category",
+                "estimated_cost",
+                "currency",
+                "duration_minutes",
+                "image_url",
+                "is_active",
+            )
         },
     )
     await db.execute(stmt)
@@ -217,15 +340,107 @@ async def seed_demo_user(db: AsyncSession) -> User:
     return user
 
 
+# Two fully populated trips on the demo account (PRD section 8). One upcoming and
+# one finished, so the dashboard has something in every status bucket.
+#   name -> (days from today, nights per stop, [city names in order])
+DEMO_TRIPS: list[tuple[str, int, int, list[str]]] = [
+    (
+        "European Highlights",
+        30,
+        3,
+        ["Paris", "Rome", "Barcelona"],
+    ),
+    (
+        "Southeast Asia Loop",
+        -60,
+        4,
+        ["Bangkok", "Chiang Mai", "Bali"],
+    ),
+]
+
+ACTIVITIES_PER_DEMO_STOP = 3
+
+
+async def seed_demo_trips(
+    db: AsyncSession, user: User, city_ids: dict[tuple[str, str], uuid.UUID]
+) -> int:
+    """Idempotent on (user, trip name): re-running never duplicates a trip."""
+    by_name = {name: city_id for (name, _country), city_id in city_ids.items()}
+    created = 0
+
+    for trip_name, start_offset, nights, city_names in DEMO_TRIPS:
+        exists = await db.scalar(
+            select(Trip.id).where(Trip.user_id == user.id, Trip.name == trip_name)
+        )
+        if exists:
+            continue
+
+        start = date.today() + timedelta(days=start_offset)
+        total_nights = nights * len(city_names)
+        trip = Trip(
+            user_id=user.id,
+            name=trip_name,
+            description=f"{len(city_names)} cities over {total_nights} days.",
+            start_date=start,
+            end_date=start + timedelta(days=total_nights - 1),
+            travelers=2,
+            currency=CATALOG_CURRENCY,
+        )
+        db.add(trip)
+        await db.flush()
+
+        for order_index, city_name in enumerate(city_names):
+            stop_start = start + timedelta(days=order_index * nights)
+            stop = TripStop(
+                trip_id=trip.id,
+                city_id=by_name[city_name],
+                start_date=stop_start,
+                end_date=stop_start + timedelta(days=nights - 1),
+                order_index=order_index,
+            )
+            db.add(stop)
+            await db.flush()
+
+            # Snapshot a few of that city's catalog activities, cheapest first,
+            # spread one per day so the itinerary reads like a real plan.
+            picks = (
+                await db.execute(
+                    select(Activity)
+                    .where(Activity.city_id == stop.city_id, Activity.is_active.is_(True))
+                    .order_by(Activity.estimated_cost)
+                    .limit(ACTIVITIES_PER_DEMO_STOP)
+                )
+            ).scalars().all()
+
+            for day, activity in enumerate(picks):
+                db.add(
+                    TripActivity(
+                        trip_stop_id=stop.id,
+                        activity_id=activity.id,
+                        name=activity.name,
+                        category=activity.category,
+                        scheduled_date=stop_start + timedelta(days=min(day, nights - 1)),
+                        duration_minutes=activity.duration_minutes,
+                        cost=activity.estimated_cost,
+                        order_index=0,
+                    )
+                )
+        created += 1
+
+    return created
+
+
 async def main() -> None:
     async with SessionLocal() as db:
         city_ids = await seed_cities(db)
         activity_count = await seed_activities(db, city_ids)
         user = await seed_demo_user(db)
+        trip_count = await seed_demo_trips(db, user, city_ids)
         await db.commit()
 
     print(f"cities:     {len(city_ids)}")
     print(f"activities: {activity_count}")
+    print(f"demo trips: {trip_count} new")
     print(f"demo user:  {user.email} / {DEMO_PASSWORD}")
     await engine.dispose()
 

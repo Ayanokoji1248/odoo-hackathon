@@ -209,3 +209,31 @@ async def test_deleting_a_user_drops_their_saved_destinations(client, auth, cata
 
     async with SessionLocal() as db:
         assert await db.scalar(select(func.count()).select_from(SavedDestination)) == 0
+
+
+# --- fields the explore UI needs ----------------------------------------------
+
+
+async def test_activity_detail_carries_its_city_name(client, catalog):
+    r = await client.get(f"{ACTIVITIES}/{catalog['activities']['louvre']}")
+    assert r.status_code == 200, r.text
+    assert r.json()["data"]["city_name"] == "Paris"
+
+
+async def test_activity_list_resolves_every_city_name(client, catalog):
+    """Activity.city is lazy="raise", so a missing joinedload 500s here."""
+    r = await client.get(ACTIVITIES)
+    assert r.status_code == 200, r.text
+    assert all(row["city_name"] for row in r.json()["data"])
+
+
+async def test_city_exposes_the_display_metadata(client, catalog):
+    r = await client.get(f"{CITIES}/{catalog['cities']['paris']}")
+    data = r.json()["data"]
+    assert set(data) >= {"tags", "best_season", "avg_daily_cost", "image_url"}
+    assert isinstance(data["tags"], list)
+
+
+async def test_city_list_also_exposes_the_display_metadata(client, catalog):
+    row = (await client.get(CITIES)).json()["data"][0]
+    assert set(row) >= {"tags", "best_season", "avg_daily_cost", "image_url"}

@@ -1,3 +1,5 @@
+import type { CostIndex } from "./city";
+
 export type TripStatus = "upcoming" | "ongoing" | "completed" | "draft";
 
 export interface TripStop {
@@ -8,6 +10,9 @@ export interface TripStop {
   imageUrl: string;
   startDate: string; // ISO
   endDate: string; // ISO
+  /** Carried through from the nested city on the API response. */
+  costIndex?: CostIndex;
+  tags?: string[];
 }
 
 export interface Trip {
@@ -19,10 +24,20 @@ export interface Trip {
   endDate: string; // ISO
   status: TripStatus;
   stops: TripStop[];
-  estimatedBudget: number; // in INR
-  ownerId: string;
+  /** Activities (x travelers) plus manual budget items. */
+  estimatedBudget: number;
   activityCount: number;
   isPublic: boolean;
   shareToken?: string;
   createdAt: string;
+
+  /** Ordered city names. Always present from the API; list responses carry these
+   *  instead of the full `stops` array, which is detail-only. */
+  cityNames?: string[];
+  stopCount?: number;
+  travelers?: number;
+  currency?: string;
+  durationDays?: number;
+  /** Not exposed by the API - a trip is only ever fetched by its owner. */
+  ownerId?: string;
 }
